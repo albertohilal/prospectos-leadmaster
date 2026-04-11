@@ -21,3 +21,20 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# ===== Agregados para LeadMaster =====
+
+# Capturas y archivos temporales
+screenshots/
+src/local/temp_screenshots/
+AUXILIAR/
+
+# Archivos grandes de entrenamiento de Tesseract
+*.traineddata
+
+# Base de datos local (si usás SQLite)
+*.db
+*.sqlite
+
+# Respaldo local
+backup-vps-*/
