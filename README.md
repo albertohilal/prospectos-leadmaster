@@ -1,111 +1,162 @@
-# prospectos-leadmaster
+# Prospectos LeadMaster
 
-Proyecto base para gestión de prospectos de Leadmaster.
+Sistema híbrido humano-automático para recolectar prospectos de anuncios patrocinados, combinando interacción humana con automatización backend.
 
-## Estructura
+## 🎯 Objetivo
 
-- `src/`: código fuente
+Capturar landing pages de anuncios patrocinados en motores de búsqueda (Google, Bing) mediante:
+1. **Interfaz humana**: El usuario hace clic en anuncios desde su navegador local (evitando CAPTCHA)
+2. **Automatización backend**: Captura automática de pantalla, OCR y almacenamiento en MySQL
 
-## Primeros pasos
+## 📁 Estructura del Proyecto
 
-1. Definir stack (Node.js, Python, etc.)
-2. Inicializar dependencias
-3. Implementar módulos de negocio
+```
+prospectos-leadmaster/
+├── src/
+│   ├── scraper/           # Script automatizado para VPS (headless)
+│   │   └── leadmaster_scraper.js
+│   ├── api/               # API REST para recibir prospectos desde local
+│   │   └── server.js
+│   ├── local/             # Script para ejecutar en PC local (interacción humana)
+│   │   └── scraper-local.js
+│   └── shared/            # Utilidades comunes (configuración BD, helpers)
+├── config/
+│   └── create_table.sql   # Estructura de base de datos
+├── docs/                  # Documentación
+├── frontend/              # Interfaz web (futuro)
+├── scripts/               # Scripts de despliegue SSH
+└── package.json          # Dependencias Node.js
+```
 
-## Conexión SSH del proyecto
+## 🚀 Componentes Principales
 
-Este proyecto se conecta al servidor por SSH usando:
+### 1. **Script Local (`src/local/scraper-local.js`)**
+- **Ejecución**: En tu PC con Node.js
+- **Función**: Abre Chrome, realiza búsqueda, espera clics manuales en anuncios
+- **Ventaja**: Tráfico humano real, sin bloqueos CAPTCHA
+- **Uso**: `node scraper-local.js "palabra clave"`
 
+### 2. **API Backend (`src/api/server.js`)**
+- **Ejecución**: En VPS (servidor Node.js + Express)
+- **Función**: Recibe prospectos vía HTTP, guarda en MySQL, gestiona OCR
+- **Endpoints**: `POST /api/prospectos` - Guardar landing page
+
+### 3. **Scraper Automático (`src/scraper/leadmaster_scraper.js`)**
+- **Ejecución**: En VPS (headless con xvfb)
+- **Función**: Scraping completamente automático (actualmente bloqueado por Google CAPTCHA)
+- **Uso**: Para motores menos restrictivos (Bing, DuckDuckGo)
+
+## 🛠️ Configuración Inicial
+
+### En el VPS (servidor)
 ```bash
-ssh root@185.187.170.196
+cd prospectos-leadmaster
+npm install
+
+# Configurar base de datos MySQL
+mysql -u root -p < config/create_table.sql
+
+# Iniciar API
+npm run api:start
 ```
 
-Si usas clave privada específica:
-
+### En tu PC local
 ```bash
-ssh -i ~/.ssh/tu_clave root@185.187.170.196
+# Instalar Node.js y dependencias
+npm install playwright mysql2 tesseract.js
+
+# Configurar conexión al API del VPS
+# Editar src/local/config.js con URL del API
 ```
 
-### Alias recomendado en `~/.ssh/config`
+## 📖 Uso
 
-Agregar este bloque para conectarte más rápido con `ssh leadmaster-prod`:
+### Flujo de trabajo recomendado
 
-```sshconfig
-Host leadmaster-prod
-	HostName 185.187.170.196
-	User root
-	IdentityFile ~/.ssh/tu_clave
-```
+1. **Iniciar API en VPS**:
+   ```bash
+   npm run api:start
+   ```
 
-### Scripts incluidos
+2. **Ejecutar script local en tu PC**:
+   ```bash
+   node src/local/scraper-local.js "presupuesto para reforma de oficinas en CABA"
+   ```
 
-- Conexión SSH:
+3. **Interacción**:
+   - El script abre Chrome con resultados de búsqueda
+   - Tú haces clic manualmente en anuncios patrocinados
+   - El script detecta landing page y envía captura al API
 
+4. **Resultado**:
+   - Landing page capturada como imagen
+   - Texto extraído via OCR
+   - Prospecto guardado en MySQL
+
+### Scripts disponibles
 ```bash
-./scripts/ssh-connect.sh
+# Scraper automático (VPS)
+npm run scraper:start "palabra clave"
+
+# API backend
+npm run api:start
+
+# Script local (PC)
+npm run local:start "palabra clave"
+
+# Monitoreo BD
+npm run db:status
+npm run db:view
 ```
 
-- Despliegue básico (sin borrar archivos remotos):
+## 🔧 Configuración
 
-```bash
-./scripts/deploy.sh
-```
+### Base de datos MySQL
+- **Host**: `localhost`
+- **Database**: `leadmaster`
+- **User**: `leadmaster_user`
+- **Password**: `leadmaster_password`
 
-Si tu llave SSH no es la predeterminada, exporta antes:
+### API Backend
+- **Puerto**: `3000` (configurable en `.env`)
+- **CORS**: Habilitado para `localhost`
 
-```bash
-export SSH_KEY=~/.ssh/tu_clave
-```
+### Script Local
+- **API URL**: `http://tu-vps-ip:3000/api/prospectos`
+- **Browser**: Chrome (headless: false para interacción)
 
-Opcional para cambiar ruta remota:
+## 📊 Base de Datos
 
-```bash
-export REMOTE_PATH=/root/prospectos-leadmaster
-```
+Tabla `prospectos` almacena:
+- `palabra_clave`: Término buscado
+- `url_anuncio`: URL del anuncio en motor de búsqueda
+- `url_landing`: URL de la landing page
+- `texto_extraido`: Texto extraído por OCR
+- `es_valido`: NULL (no evaluado), TRUE (válido), FALSE (inválido)
+- `metadata`: JSON con rutas de screenshot, errores, etc.
 
-Por defecto, los scripts usan esta clave:
+## 🐛 Solución de Problemas
 
-```bash
-~/.ssh/leadmaster_prod
-```
+### Google CAPTCHA
+- **Síntoma**: Script automático bloqueado con página "sorry/index"
+- **Solución**: Usar script local (interacción humana)
 
-Puedes sobreescribirla con `SSH_KEY`.
+### Conexión API
+- Verificar que el VPS permita conexiones en puerto 3000
+- Configurar CORS si se accede desde otro dominio
 
-### Seguridad de credenciales
+### OCR de baja calidad
+- Ajustar parámetros de Tesseract en configuración
+- Verificar idiomas instalados: `tesseract --list-langs`
 
-- No se almacena contraseña del servidor en el proyecto.
-- Los scripts fuerzan autenticación por clave pública (sin password).
-- Si tu clave tiene passphrase, usa `ssh-agent`.
-- Si no hay clave disponible, los scripts fallan con un mensaje claro y cómo corregirlo.
+## 🔮 Próximas Mejoras
 
-## Auto conexión al abrir en VS Code
+1. **Interfaz web** para gestionar palabras clave y visualizar prospectos
+2. **Clasificación automática** con OpenAI API
+3. **Integración con OpenClaw** para orquestación avanzada
+4. **Soporte multi-motor** (Google, Bing, Yahoo)
+5. **Dashboard de métricas** y reportes
 
-Al abrir este proyecto en VS Code, se ejecuta automáticamente la tarea `SSH: conectar servidor` y abre una terminal conectando por SSH.
+## 📄 Licencia
 
-### Configuración inicial obligatoria (una sola vez)
-
-Para que la auto conexión funcione, la clave pública local debe estar autorizada en el servidor:
-
-```bash
-./scripts/install-ssh-key.sh
-```
-
-Después de eso, vuelve a abrir la carpeta en VS Code y la conexión será automática.
-
-Si no se conecta al abrir:
-
-1. Ejecuta manualmente la tarea `SSH: conectar servidor` una vez.
-2. En VS Code, permite tareas automáticas para esta carpeta (`Tasks: Manage Automatic Tasks in Folder` → `Allow Automatic Tasks in Folder`).
-
-Archivos de configuración:
-
-- `.vscode/tasks.json`
-- `.vscode/settings.json`
-
-Si quieres desactivarlo, cambia en `.vscode/settings.json`:
-
-```json
-{
-	"task.allowAutomaticTasks": "off"
-}
-```
+MIT - Ver archivo LICENSE

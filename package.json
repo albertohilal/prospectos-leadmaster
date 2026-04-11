@@ -1,0 +1,37 @@
+{
+  "name": "leadmaster-scraper",
+  "version": "1.0.0",
+  "description": "Sistema automatizado para recolectar prospectos de anuncios patrocinados en Google Chrome",
+  "main": "src/scraper/leadmaster_scraper.js",
+  "scripts": {
+    "scraper:start": "node src/scraper/leadmaster_scraper.js",
+    "scraper:test": "node src/scraper/leadmaster_scraper.js \"presupuesto para reforma de oficinas en CABA\"",
+    "api:start": "node src/api/server.js",
+    "local:start": "node src/local/scraper-local.js",
+    "db:status": "mysql -u leadmaster_user -pleadmaster_password -e \"USE leadmaster; SELECT COUNT(*) as total_prospectos FROM prospectos;\"",
+    "db:view": "mysql -u leadmaster_user -pleadmaster_password -e \"USE leadmaster; SELECT id, palabra_clave, es_valido, DATE(fecha_hora) as fecha, LENGTH(texto_extraido) as chars FROM prospectos ORDER BY id DESC LIMIT 10;\"",
+    "dev": "concurrently \"npm run api:start\" \"npm run local:start\""
+  },
+  "keywords": ["scraper", "playwright", "mysql", "ocr", "lead-generation"],
+  "author": "OpenClaw LeadMaster",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "mysql2": "^3.11.0",
+    "tesseract.js": "^5.0.3",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/leadmaster-scraper"
+  }
+}
