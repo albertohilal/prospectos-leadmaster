@@ -108,7 +108,9 @@ class LeadMasterScraper {
       extractedText: null,
       screenshotPath: null,
       success: false,
-      error: null
+      error: null,
+      duplicateSkipped: false,
+      duplicateId: null
     };
   }
 
@@ -443,6 +445,11 @@ class LeadMasterScraper {
     console.log('💾 Guardando en base de datos...');
     
     try {
+      const normalizedLandingUrl =
+        typeof this.result.landingUrl === 'string'
+          ? this.result.landingUrl.trim()
+          : this.result.landingUrl;
+
       const query = `
         INSERT INTO prospectos 
         (palabra_clave, url_anuncio, url_landing, texto_extraido, es_valido, metadata) 
@@ -459,15 +466,51 @@ class LeadMasterScraper {
       const [result] = await this.dbConnection.execute(query, [
         this.result.keyword,
         this.result.adUrl,
-        this.result.landingUrl,
+        normalizedLandingUrl,
         this.result.extractedText,
         null, // es_valido (NULL por defecto, se evaluará después)
         JSON.stringify(metadata)
       ]);
+
+      this.result.duplicateSkipped = false;
+      this.result.duplicateId = null;
       
       console.log(`✅ Registro guardado con ID: ${result.insertId}`);
       return result.insertId;
     } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        try {
+          const normalizedLandingUrl =
+            typeof this.result.landingUrl === 'string'
+              ? this.result.landingUrl.trim()
+              : this.result.landingUrl;
+
+          let duplicateId = null;
+          if (normalizedLandingUrl) {
+            const [rows] = await this.dbConnection.execute(
+              `SELECT id FROM prospectos
+               WHERE url_landing_hash = SHA2(TRIM(?), 256)
+               LIMIT 1`,
+              [normalizedLandingUrl]
+            );
+
+            if (rows.length > 0) {
+              duplicateId = rows[0].id;
+            }
+          }
+
+          this.result.duplicateSkipped = true;
+          this.result.duplicateId = duplicateId;
+          console.log(`⚠️ Registro duplicado detectado${duplicateId ? ` (ID existente: ${duplicateId})` : ''}. No se inserta nuevamente.`);
+          return duplicateId || true;
+        } catch (lookupError) {
+          this.result.duplicateSkipped = true;
+          this.result.duplicateId = null;
+          console.log('⚠️ Registro duplicado detectado por índice único. No se inserta nuevamente.');
+          return true;
+        }
+      }
+
       console.error('❌ Error guardando en base de datos:', error.message);
       this.result.error = `Database: ${error.message}`;
       return false;
@@ -524,6 +567,7 @@ class LeadMasterScraper {
       console.log(`   - URL Landing: ${this.result.landingUrl}`);
       console.log(`   - Texto extraído: ${this.result.extractedText ? `${this.result.extractedText.length} caracteres` : 'Ninguno'}`);
       console.log(`   - Screenshot resultados: ${resultsScreenshotPath ? 'Sí' : 'No'}`);
+      console.log(`   - Duplicado omitido: ${this.result.duplicateSkipped ? 'Sí' : 'No'}${this.result.duplicateId ? ` (ID existente: ${this.result.duplicateId})` : ''}`);
       
     } catch (error) {
       console.error('❌ Error en el proceso:', error.message);

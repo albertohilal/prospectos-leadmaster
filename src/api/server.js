@@ -173,8 +173,9 @@ app.post('/api/prospectos', async (req, res) => {
   
   try {
     const { keyword, adUrl, landingUrl, screenshotBase64 } = req.body;
+    const normalizedLandingUrl = typeof landingUrl === 'string' ? landingUrl.trim() : '';
     
-    if (!keyword || !landingUrl) {
+    if (!keyword || !normalizedLandingUrl) {
       return res.status(400).json({
         error: 'Faltan campos requeridos: keyword y landingUrl'
       });
@@ -185,11 +186,13 @@ app.post('/api/prospectos', async (req, res) => {
     
     // 1. Verificar duplicado en base de datos
     let duplicateId = null;
-    if (landingUrl) {
+    if (normalizedLandingUrl) {
       try {
         const [duplicateRows] = await dbConnection.execute(
-          'SELECT id FROM prospectos WHERE url_landing = ? LIMIT 1',
-          [landingUrl]
+          `SELECT id FROM prospectos
+           WHERE url_landing_hash = SHA2(TRIM(?), 256)
+           LIMIT 1`,
+          [normalizedLandingUrl]
         );
         if (duplicateRows.length > 0) {
           duplicateId = duplicateRows[0].id;
@@ -207,10 +210,11 @@ app.post('/api/prospectos', async (req, res) => {
       return res.status(409).json({
         success: false,
         message: 'Prospecto duplicado',
+        duplicateSkipped: true,
         data: {
           duplicateId,
           keyword,
-          landingUrl
+          landingUrl: normalizedLandingUrl
         }
       });
     }
@@ -240,7 +244,7 @@ app.post('/api/prospectos', async (req, res) => {
     const prospectoData = {
       palabra_clave: keyword,
       url_anuncio: adUrl || null,
-      url_landing: landingUrl,
+      url_landing: normalizedLandingUrl,
       texto_extraido: extractedText,
       screenshot_path: screenshotPath,
       metadata
@@ -252,10 +256,11 @@ app.post('/api/prospectos', async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Prospecto guardado exitosamente',
+      duplicateSkipped: false,
       data: {
         id: prospectoId,
         keyword,
-        landingUrl,
+        landingUrl: normalizedLandingUrl,
         screenshotSaved: !!screenshotPath,
         textExtracted: !!extractedText,
         textLength: extractedText ? extractedText.length : 0
@@ -263,6 +268,44 @@ app.post('/api/prospectos', async (req, res) => {
     });
     
   } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      try {
+        const { landingUrl, keyword } = req.body;
+        const normalizedLandingUrl = typeof landingUrl === 'string' ? landingUrl.trim() : '';
+        let duplicateId = null;
+
+        if (normalizedLandingUrl) {
+          const [rows] = await dbConnection.execute(
+            `SELECT id FROM prospectos
+             WHERE url_landing_hash = SHA2(TRIM(?), 256)
+             LIMIT 1`,
+            [normalizedLandingUrl]
+          );
+          if (rows.length > 0) {
+            duplicateId = rows[0].id;
+          }
+        }
+
+        return res.status(409).json({
+          success: false,
+          message: 'Prospecto duplicado',
+          duplicateSkipped: true,
+          data: {
+            duplicateId,
+            keyword,
+            landingUrl: normalizedLandingUrl
+          }
+        });
+      } catch (lookupError) {
+        console.error('❌ Error buscando duplicado tras ER_DUP_ENTRY:', lookupError.message);
+        return res.status(409).json({
+          success: false,
+          message: 'Prospecto duplicado',
+          duplicateSkipped: true
+        });
+      }
+    }
+
     console.error('❌ Error procesando prospecto:', error.message);
     res.status(500).json({
       error: 'Error interno del servidor',
