@@ -67,11 +67,30 @@ export REMOTE_PATH=/root/prospectos-leadmaster
 ./scripts/install-ssh-key.sh
 ```
 
+### 5. `run-daily-batch.sh` - Tanda diaria semiautomatizada
+**Propósito:** Ejecutar secuencialmente las 20 keywords (o un rango) sobre el scraper local, con objetivo por keyword para reducir trabajo manual repetitivo.
+
+**Uso:**
+```bash
+# Tanda completa, 2 capturas por keyword (default)
+bash ./scripts/run-daily-batch.sh
+
+# Solo keywords 6 a 10, objetivo 2 capturas
+bash ./scripts/run-daily-batch.sh --from 6 --to 10 --target 2
+
+# Modo manual (pregunta s/n por cada captura)
+bash ./scripts/run-daily-batch.sh --manual
+
+# Simulación (no ejecuta scraper)
+bash ./scripts/run-daily-batch.sh --dry-run
+```
+
 ## Flujo de Trabajo Recomendado
 
 ### Para desarrolladores locales:
 1. **Precheck:** `./scripts/run-local.sh`
 2. **Ejecutar captura:** `node src/local/scraper-local.js "palabra clave"`
+3. **Alternativa semiautomatizada:** `bash ./scripts/run-daily-batch.sh --target 2`
 3. **Verificar resultados:** Conectarse al VPS y revisar base de datos
 
 ### Para despliegue de cambios:

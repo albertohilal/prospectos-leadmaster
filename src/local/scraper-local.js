@@ -7,7 +7,7 @@
  * Abre Chrome, realiza búsqueda, espera clics manuales en anuncios,
  * captura landing pages y envía a API en VPS.
  * 
- * Uso: node scraper-local.js "palabra clave"
+ * Uso: node scraper-local.js "palabra clave" [--target N] [--manual]
  * Ejemplo: node scraper-local.js "presupuesto para reforma de oficinas en CABA"
  */
 
@@ -20,15 +20,26 @@ const config = require('../shared/config');
 // Configuración específica para modo local
 const LOCAL_CONFIG = {
   ...config.local,
+  captureDelay: parseInt(process.env.LOCAL_CAPTURE_DELAY_MS || '') || 1200,
+  autoScrollBeforeCapture: process.env.LOCAL_AUTOSCROLL !== 'false',
   browser: {
     ...config.browser,
     headless: false, // Siempre visible para interacción humana
-    slowMo: 300      // Más lento para ver qué pasa
+    slowMo: parseInt(process.env.LOCAL_SLOWMO_MS || '') || 80
   }
 };
 
 // API endpoint
 const API_URL = LOCAL_CONFIG.apiUrl;
+
+function createTimeoutSignal(timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeoutId)
+  };
+}
 
 // Conjunto para evitar duplicados en la misma sesión
 const capturedUrls = new Set();
@@ -60,8 +71,11 @@ function isValidLandingUrl(url) {
   // Excluir páginas de error/cookies/CAPTCHA comunes
   const invalidPatterns = [
     'about:blank',
+    'about:srcdoc',
     'about:newtab',
     'chrome://',
+    'chrome-error://',
+    'chromewebdata',
     'data:text/html',
     'file://',
     '/sorry/',
@@ -157,6 +171,24 @@ async function sendToAPI(prospectoData) {
  */
 async function captureScreenshot(page, keyword) {
   try {
+    if (LOCAL_CONFIG.autoScrollBeforeCapture) {
+      await page.evaluate(async () => {
+        const totalHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+        const viewportHeight = window.innerHeight || 800;
+        const step = Math.max(250, Math.floor(viewportHeight * 0.7));
+        let current = 0;
+
+        while (current + viewportHeight < totalHeight) {
+          current = Math.min(current + step, totalHeight);
+          window.scrollTo(0, current);
+          await new Promise(resolve => setTimeout(resolve, 120));
+        }
+
+        window.scrollTo(0, 0);
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+    }
+
     // Crear directorio temporal local
     const tempDir = path.join(__dirname, 'temp_screenshots');
     await fs.mkdir(tempDir, { recursive: true });
@@ -187,7 +219,7 @@ async function captureScreenshot(page, keyword) {
 /**
  * Buscar en Google y esperar interacción humana
  */
-async function searchAndWaitForClicks(keyword) {
+async function searchAndWaitForClicks(keyword, runtimeOptions) {
   console.log(`🔍 Buscando: "${keyword}"`);
   console.log('🖱️  Por favor, haz clic en anuncios patrocinados...');
   console.log('ℹ️  El script detectará automáticamente cuando navegues a una landing page.');
@@ -198,11 +230,35 @@ async function searchAndWaitForClicks(keyword) {
   const page = await context.newPage();
   
   let prospectCount = 0;
+  let isMainPageProcessing = false;
+  let searchResultsUrl = null;
+  let resolveExit = null;
+  let stopRequested = false;
+
+  const requestStop = (message) => {
+    if (stopRequested) {
+      return;
+    }
+    stopRequested = true;
+    if (message) {
+      console.log(message);
+    }
+    if (resolveExit) {
+      resolveExit();
+    }
+  };
+
+  const checkTargetReached = () => {
+    if (runtimeOptions.targetCaptures > 0 && prospectCount >= runtimeOptions.targetCaptures) {
+      requestStop(`🎯 Objetivo alcanzado: ${prospectCount}/${runtimeOptions.targetCaptures} capturas. Finalizando keyword...`);
+    }
+  };
   
   try {
     // 1. Ir a Google con región Argentina
     const googleUrl = 'https://www.google.com/?gl=ar&hl=es-419';
-    await page.goto(googleUrl, { waitUntil: 'networkidle' });
+    await page.goto(googleUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(700);
     
     // 2. Aceptar cookies si aparecen
     for (const cookieSelector of config.selectors.cookieButtons) {
@@ -221,10 +277,11 @@ async function searchAndWaitForClicks(keyword) {
     
     // 3. Realizar búsqueda
     await page.fill('textarea[name="q"], input[name="q"]', keyword);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(250);
     await page.press('textarea[name="q"], input[name="q"]', 'Enter');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(900);
+    searchResultsUrl = page.url();
     
     console.log('✅ Resultados de búsqueda cargados.');
     console.log('👉 Ahora puedes hacer clic en anuncios patrocinados.');
@@ -233,31 +290,64 @@ async function searchAndWaitForClicks(keyword) {
     // 4. Monitorear cambios de URL (nuevas pestañas o navegaciones)
     context.on('page', async (newPage) => {
       console.log('🔄 Nueva pestaña detectada...');
-      const processed = await handleLandingPage(newPage, keyword, prospectCount + 1);
+      const processed = await handleLandingPage(newPage, keyword, prospectCount + 1, runtimeOptions);
       if (processed) {
         prospectCount++;
+        checkTargetReached();
       }
     });
     
     // También monitorear navegaciones en la página principal
     page.on('framenavigated', async (frame) => {
+      if (frame !== page.mainFrame()) {
+        return;
+      }
+
       const url = frame.url();
-      if (url && isValidLandingUrl(url)) {
+      if (!url) {
+        return;
+      }
+
+      if (!isValidLandingUrl(url)) {
+        console.log(`⚠️  Navegación detectada pero URL inválida (ignorando): ${url}`);
+        return;
+      }
+
+      if (isMainPageProcessing) {
+        console.log('⏳ Navegación válida detectada mientras se procesa otra; ignorando evento duplicado...');
+        return;
+      }
+
+      isMainPageProcessing = true;
+      try {
         console.log(`🌐 Navegación detectada (válida): ${url}`);
+
         // Esperar un momento para que cargue la página
         await page.waitForTimeout(2000);
-        const processed = await handleLandingPage(page, keyword, prospectCount + 1);
+        const processed = await handleLandingPage(page, keyword, prospectCount + 1, runtimeOptions);
         if (processed) {
           prospectCount++;
+          checkTargetReached();
         }
-        
-        // Volver a resultados de búsqueda (siempre volvemos porque el usuario navegó)
-        console.log('↩️  Volviendo a resultados de búsqueda...');
-        await page.goBack();
-        await page.waitForLoadState('networkidle');
-        await page.waitForTimeout(1000);
-      } else if (url) {
-        console.log(`⚠️  Navegación detectada pero URL inválida (ignorando): ${url}`);
+
+        // Volver a resultados de búsqueda con navegación segura
+        if (searchResultsUrl) {
+          console.log('↩️  Volviendo a resultados de búsqueda...');
+          await page.goto(searchResultsUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await page.waitForTimeout(600);
+        }
+      } catch (navigationError) {
+        const message = navigationError?.message || '';
+        if (
+          message.includes('Target page, context or browser has been closed') ||
+          message.includes('net::ERR_ABORTED')
+        ) {
+          console.log('ℹ️  Navegador cerrado por usuario. Finalizando navegación pendiente.');
+        } else {
+          console.warn(`⚠️  Error controlado en navegación principal: ${message}`);
+        }
+      } finally {
+        isMainPageProcessing = false;
       }
     });
     
@@ -266,19 +356,17 @@ async function searchAndWaitForClicks(keyword) {
     
     // Escuchar entrada del usuario para salir
     const waitForExit = new Promise((resolve) => {
+      resolveExit = resolve;
       rl.on('line', (input) => {
         if (input.trim().toLowerCase() === 'q') {
-          console.log('👋 Finalizando...');
-          resolve();
+          requestStop('👋 Finalizando...');
         }
       });
     });
     
     // También escuchar Ctrl+C
     process.on('SIGINT', () => {
-      console.log('\n👋 Interrupción recibida. Cerrando...');
-      rl.close();
-      process.exit(0);
+      requestStop('\n👋 Interrupción recibida. Cerrando...');
     });
     
     await waitForExit;
@@ -294,7 +382,7 @@ async function searchAndWaitForClicks(keyword) {
 /**
  * Manejar landing page: capturar y enviar a API
  */
-async function handleLandingPage(page, keyword, prospectNumber) {
+async function handleLandingPage(page, keyword, prospectNumber, runtimeOptions) {
   try {
     console.log(`\n🎯 Prospecto #${prospectNumber} detectado`);
     
@@ -358,13 +446,16 @@ async function handleLandingPage(page, keyword, prospectNumber) {
       console.log(`⚠️  Prospecto #${prospectNumber} no se pudo enviar a API`);
     }
     
-    // Preguntar si quiere continuar
-    console.log('\n---');
-    const answer = await question('¿Deseas hacer clic en otro anuncio? (s/n): ');
-    
-    if (answer.trim().toLowerCase() !== 's') {
-      console.log('👋 Finalizando captura de anuncios.');
-      // Podríamos cerrar el navegador o continuar
+    // Preguntar si quiere continuar solo en modo manual
+    if (runtimeOptions.manualConfirmEachCapture) {
+      console.log('\n---');
+      const answer = await question('¿Deseas hacer clic en otro anuncio? (s/n): ');
+      
+      if (answer.trim().toLowerCase() !== 's') {
+        console.log('👋 Finalizando captura de anuncios.');
+      }
+    } else {
+      console.log('➡️  Continuando automáticamente...');
     }
     
     return true;
@@ -379,6 +470,28 @@ async function handleLandingPage(page, keyword, prospectNumber) {
  */
 async function main() {
   const keyword = process.argv[2];
+  const extraArgs = process.argv.slice(3);
+
+  const runtimeOptions = {
+    manualConfirmEachCapture: process.env.LOCAL_MANUAL_CONFIRM === 'true',
+    targetCaptures: parseInt(process.env.LOCAL_TARGET_CAPTURES || '', 10) || 0
+  };
+
+  for (let i = 0; i < extraArgs.length; i++) {
+    const arg = extraArgs[i];
+    if (arg === '--manual') {
+      runtimeOptions.manualConfirmEachCapture = true;
+    } else if (arg === '--auto') {
+      runtimeOptions.manualConfirmEachCapture = false;
+    } else if (arg === '--target') {
+      const nextArg = extraArgs[i + 1];
+      const parsed = parseInt(nextArg || '', 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        runtimeOptions.targetCaptures = parsed;
+        i++;
+      }
+    }
+  }
   
   if (!keyword) {
     console.error('❌ Error: Debes proporcionar una palabra clave como argumento.');
@@ -388,6 +501,8 @@ async function main() {
   }
   
   console.log('🚀 LeadMaster Scraper Local');
+  console.log(`⚙️  Modo confirmación por captura: ${runtimeOptions.manualConfirmEachCapture ? 'manual' : 'automático'}`);
+  console.log(`🎯 Objetivo de capturas: ${runtimeOptions.targetCaptures > 0 ? runtimeOptions.targetCaptures : 'sin límite'}`);
   console.log('='.repeat(50));
   console.log(`📝 Palabra clave: ${keyword}`);
   console.log(`🌐 API: ${API_URL}`);
@@ -395,7 +510,12 @@ async function main() {
   
   // Verificar que la API esté disponible
   try {
-    const healthResponse = await fetch(`${API_URL}/health`);
+    const timeout = createTimeoutSignal(6000);
+    const healthResponse = await fetch(`${API_URL}/health`, {
+      signal: timeout.signal
+    });
+    timeout.cancel();
+
     if (!healthResponse.ok) {
       console.warn('⚠️  API no parece estar disponible. ¿Está ejecutándose?');
       console.warn(`   URL: ${API_URL}/health`);
@@ -406,6 +526,9 @@ async function main() {
       }
     }
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('⚠️  Timeout verificando API (6s).');
+    }
     console.warn('⚠️  No se pudo conectar a la API:', error.message);
     const proceed = await question('¿Continuar de todos modos? (s/n): ');
     if (proceed.trim().toLowerCase() !== 's') {
@@ -415,7 +538,7 @@ async function main() {
   }
   
   // Iniciar proceso
-  await searchAndWaitForClicks(keyword);
+  await searchAndWaitForClicks(keyword, runtimeOptions);
 }
 
 // Manejo de errores global

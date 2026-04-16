@@ -5,7 +5,7 @@ SSH_USER="${SSH_USER:-root}"
 SSH_HOST="${SSH_HOST:-185.187.170.196}"
 DEFAULT_SSH_KEY="$HOME/.ssh/leadmaster_prod"
 SSH_KEY="${SSH_KEY:-$DEFAULT_SSH_KEY}"
-REMOTE_PATH="${REMOTE_PATH:-/root/prospectos-leadmaster}"
+REMOTE_PATH="${REMOTE_PATH:-/root/.openclaw/workspace-leadmaster-central-hub/prospectos-leadmaster}"
 
 SSH_OPTS=(
   -o PreferredAuthentications=publickey

@@ -194,9 +194,18 @@ check_api_connectivity() {
         warning "No se pudo determinar API_URL. Usando valor por defecto."
         api_url="http://185.187.170.196:8080/api"
     fi
+
+    export API_URL="$api_url"
     
-    # Extraer host:puerto para curl
-    local health_url="${api_url%/api}/health"
+    # Construir endpoint de health según API_URL configurada
+    # Si API_URL termina en /api -> usar /api/health
+    # Si no, anexar /api/health para compatibilidad
+    local health_url
+    if [[ "$api_url" == */api ]]; then
+        health_url="${api_url}/health"
+    else
+        health_url="${api_url%/}/api/health"
+    fi
     
     info "Probando conexión a: $health_url"
     
@@ -239,7 +248,7 @@ check_database_connection() {
     
     info "Intentando conectar a VPS para verificar BD..."
     if ssh -i "$ssh_key" -o ConnectTimeout=5 root@185.187.170.196 \
-        "cd /root/.openclaw/workspace-leadmaster-central-hub/prospectos-leadmaster && npm run db:status 2>/dev/null || echo 'ERROR'"; then
+        "cd /root/prospectos-leadmaster 2>/dev/null || cd /root/.openclaw/workspace-leadmaster-central-hub/prospectos-leadmaster 2>/dev/null; npm run db:status 2>/dev/null || echo 'ERROR'"; then
         success "Conexión a VPS y BD verificada"
         return 0
     else
@@ -341,9 +350,16 @@ EOF
     info "Enviando prospecto de prueba a API..."
     local api_url="${API_URL:-http://185.187.170.196:8080/api}"
     
+    local prospectos_url
+    if [[ "$api_url" == */api ]]; then
+        prospectos_url="${api_url}/prospectos"
+    else
+        prospectos_url="${api_url%/}/api/prospectos"
+    fi
+
     if response=$(curl -s -X POST -H "Content-Type: application/json" \
-        -d "$test_payload" "${api_url%/api}/prospectos"); then
-        if echo "$response" | grep -q '"success":true'; then
+        -d "$test_payload" "$prospectos_url"); then
+        if echo "$response" | grep -Eq '"success":true|"duplicateSkipped":true|"message":"Prospecto duplicado"'; then
             success "Prueba exitosa: Prospecto enviado correctamente"
             echo "Respuesta: $response"
             return 0
