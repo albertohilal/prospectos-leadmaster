@@ -16,6 +16,8 @@ const dbConfig = {
   queueLimit: 0
 };
 
+const dbSessionTimeZone = process.env.DB_TIMEZONE || '-03:00';
+
 // Configuración de la API
 const apiConfig = {
   port: process.env.API_PORT || 3001,
@@ -106,6 +108,7 @@ const timeouts = {
 
 module.exports = {
   db: dbConfig,
+  dbSessionTimeZone,
   api: apiConfig,
   browser: browserConfig,
   ocr: ocrConfig,

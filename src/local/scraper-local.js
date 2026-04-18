@@ -32,6 +32,18 @@ const LOCAL_CONFIG = {
 // API endpoint
 const API_URL = LOCAL_CONFIG.apiUrl;
 
+function buildLandingKey(urlValue) {
+  try {
+    const parsedUrl = new URL(urlValue);
+    parsedUrl.hash = '';
+    parsedUrl.search = '';
+    const normalizedPath = parsedUrl.pathname.replace(/\/+$/, '') || '/';
+    return `${parsedUrl.origin.toLowerCase()}${normalizedPath}`;
+  } catch {
+    return (urlValue || '').trim().toLowerCase();
+  }
+}
+
 function createTimeoutSignal(timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -136,6 +148,16 @@ function question(query) {
   return new Promise(resolve => rl.question(query, resolve));
 }
 
+function logDuplicateProcessedNotice(keyword, landingUrl, duplicateId) {
+  console.log('\n🚫 ===============================================');
+  console.log('🚫 ANUNCIO EXPLÍCITO: LANDING YA PROCESADA');
+  console.log('🚫 ===============================================');
+  console.log(`📝 Keyword: ${keyword}`);
+  console.log(`🌐 Landing: ${landingUrl}`);
+  console.log(`🆔 ID existente: ${duplicateId || 'N/A'}`);
+  console.log('⏭️  Acción: se omite captura y envío para ahorrar trabajo.\n');
+}
+
 /**
  * Enviar prospecto a API
  */
@@ -156,6 +178,14 @@ async function sendToAPI(prospectoData) {
     if (response.ok) {
       console.log(`✅ Prospecto enviado exitosamente (ID: ${result.data?.id})`);
       return { success: true, data: result.data };
+    } else if (response.status === 409 && result.duplicateSkipped) {
+      logDuplicateProcessedNotice(prospectoData.keyword, prospectoData.landingUrl, result?.data?.duplicateId);
+      return {
+        success: false,
+        duplicateSkipped: true,
+        duplicateId: result?.data?.duplicateId || null,
+        error: result.message || 'Prospecto duplicado'
+      };
     } else {
       console.error(`❌ Error API: ${result.error || 'Unknown error'}`);
       return { success: false, error: result.error };
@@ -163,6 +193,29 @@ async function sendToAPI(prospectoData) {
   } catch (error) {
     console.error('❌ Error enviando a API:', error.message);
     return { success: false, error: error.message };
+  }
+}
+
+async function checkAlreadyProcessed(keyword, landingUrl) {
+  try {
+    const encodedKeyword = encodeURIComponent(keyword);
+    const encodedUrl = encodeURIComponent(landingUrl);
+    const response = await fetch(
+      `${API_URL}/prospectos/check-processed?keyword=${encodedKeyword}&landingUrl=${encodedUrl}`
+    );
+
+    if (!response.ok) {
+      return { checked: false, processed: false, duplicateId: null };
+    }
+
+    const result = await response.json();
+    return {
+      checked: true,
+      processed: !!result.processed,
+      duplicateId: result?.data?.duplicateId || null
+    };
+  } catch (error) {
+    return { checked: false, processed: false, duplicateId: null };
   }
 }
 
@@ -411,15 +464,24 @@ async function handleLandingPage(page, keyword, prospectNumber, runtimeOptions) 
       return false; // No procesar esta página
     }
     
-    // Verificar si ya capturamos esta URL en esta sesión
-    if (capturedUrls.has(landingUrl)) {
-      console.log(`⚠️  URL ya capturada en esta sesión: ${landingUrl}`);
+    const landingKey = buildLandingKey(landingUrl);
+
+    // Verificar si ya capturamos esta landing (normalizada) en esta sesión
+    if (capturedUrls.has(landingKey)) {
+      console.log(`⚠️  Landing ya capturada en esta sesión: ${landingKey}`);
       console.log('   Ignorando duplicado...');
       return false;
     }
-    
-    // Agregar URL al conjunto de capturadas
-    capturedUrls.add(landingUrl);
+
+    // Verificar duplicado en API (keyword + landingUrl) antes de capturar screenshot
+    const duplicateCheck = await checkAlreadyProcessed(keyword, landingUrl);
+    if (duplicateCheck.checked && duplicateCheck.processed) {
+      logDuplicateProcessedNotice(keyword, landingUrl, duplicateCheck.duplicateId);
+      return false;
+    }
+
+    // Agregar landing normalizada al conjunto de capturadas de sesión
+    capturedUrls.add(landingKey);
     
     // Capturar screenshot
     console.log('📸 Capturando landing page...');

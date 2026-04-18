@@ -26,7 +26,7 @@ KEYWORDS=(
   "servicio de fumigación para plantas industriales"
   "cotización de viáticos corporativos para empleados"
   "alquiler de andamios para construcción en altura"
-  "compra de envases de vidrio para vinotecas"
+  "proveedor de envases de vidrio para vinotecas en argentina"
   "servicio de traducción técnica para exportadores"
   "presupuesto para impermeabilización de terrazas comerciales"
   "contratar escolta privada para transporte de valores"

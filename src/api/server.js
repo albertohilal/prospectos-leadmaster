@@ -36,7 +36,9 @@ let dbConnection;
 async function initDatabase() {
   try {
     dbConnection = await mysql.createConnection(config.db);
+    await dbConnection.execute('SET time_zone = ?', [config.dbSessionTimeZone]);
     console.log(`✅ API: Conectado a MySQL (${config.db.database})`);
+    console.log(`🕒 API: Zona horaria SQL activa (${config.dbSessionTimeZone})`);
   } catch (error) {
     console.error('❌ API: Error conectando a MySQL:', error.message);
     process.exit(1);
@@ -132,6 +134,36 @@ async function saveProspecto(prospectoData) {
   }
 }
 
+function buildLandingKey(urlValue) {
+  try {
+    const parsedUrl = new URL(urlValue);
+    parsedUrl.hash = '';
+    parsedUrl.search = '';
+    const normalizedPath = parsedUrl.pathname.replace(/\/+$/, '') || '/';
+    return `${parsedUrl.origin.toLowerCase()}${normalizedPath}`;
+  } catch {
+    return (urlValue || '').trim().toLowerCase();
+  }
+}
+
+async function findDuplicateProspectId(keyword, landingUrl) {
+  if (!keyword || !landingUrl) {
+    return null;
+  }
+
+  const landingKey = buildLandingKey(landingUrl);
+
+  const [rows] = await dbConnection.execute(
+    `SELECT id FROM prospectos
+     WHERE palabra_clave = ?
+       AND LOWER(TRIM(TRAILING '/' FROM SUBSTRING_INDEX(url_landing, '?', 1))) = ?
+     LIMIT 1`,
+    [keyword, landingKey]
+  );
+
+  return rows.length > 0 ? rows[0].id : null;
+}
+
 // ==================== ENDPOINTS ====================
 
 /**
@@ -148,6 +180,7 @@ app.get('/', (req, res) => {
       prospectos: {
         create: 'POST /api/prospectos',
         list: 'GET /api/prospectos',
+        checkProcessed: 'GET /api/prospectos/check-processed?keyword=...&landingUrl=...',
         get: 'GET /api/prospectos/:id',
         validate: 'PUT /api/prospectos/:id/validate'
       }
@@ -188,15 +221,9 @@ app.post('/api/prospectos', async (req, res) => {
     let duplicateId = null;
     if (normalizedLandingUrl) {
       try {
-        const [duplicateRows] = await dbConnection.execute(
-          `SELECT id FROM prospectos
-           WHERE url_landing_hash = SHA2(TRIM(?), 256)
-           LIMIT 1`,
-          [normalizedLandingUrl]
-        );
-        if (duplicateRows.length > 0) {
-          duplicateId = duplicateRows[0].id;
-          console.log(`⚠️  Duplicado detectado: URL ya existe con ID ${duplicateId}`);
+        duplicateId = await findDuplicateProspectId(keyword, normalizedLandingUrl);
+        if (duplicateId) {
+          console.log(`⚠️  Duplicado detectado: keyword + URL ya existe con ID ${duplicateId}`);
         }
       } catch (dbError) {
         console.error('❌ Error verificando duplicados:', dbError.message);
@@ -275,15 +302,7 @@ app.post('/api/prospectos', async (req, res) => {
         let duplicateId = null;
 
         if (normalizedLandingUrl) {
-          const [rows] = await dbConnection.execute(
-            `SELECT id FROM prospectos
-             WHERE url_landing_hash = SHA2(TRIM(?), 256)
-             LIMIT 1`,
-            [normalizedLandingUrl]
-          );
-          if (rows.length > 0) {
-            duplicateId = rows[0].id;
-          }
+          duplicateId = await findDuplicateProspectId(keyword, normalizedLandingUrl);
         }
 
         return res.status(409).json({
@@ -311,6 +330,39 @@ app.post('/api/prospectos', async (req, res) => {
       error: 'Error interno del servidor',
       details: error.message
     });
+  }
+});
+
+/**
+ * GET /api/prospectos/check-processed
+ * Verifica si ya existe un prospecto para la combinación keyword + landingUrl
+ */
+app.get('/api/prospectos/check-processed', async (req, res) => {
+  try {
+    const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
+    const landingUrl = typeof req.query.landingUrl === 'string' ? req.query.landingUrl.trim() : '';
+
+    if (!keyword || !landingUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parámetros requeridos: keyword y landingUrl'
+      });
+    }
+
+    const duplicateId = await findDuplicateProspectId(keyword, landingUrl);
+
+    return res.json({
+      success: true,
+      processed: !!duplicateId,
+      data: {
+        duplicateId: duplicateId || null,
+        keyword,
+        landingUrl
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error verificando prospecto procesado:', error.message);
+    return res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
