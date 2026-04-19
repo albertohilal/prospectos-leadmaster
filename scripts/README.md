@@ -85,6 +85,25 @@ bash ./scripts/run-daily-batch.sh --manual
 bash ./scripts/run-daily-batch.sh --dry-run
 ```
 
+### 6. `image-ocr.sh` - Extraer texto desde imágenes (fallback para modelos sin visión)
+**Propósito:** Convertir imágenes (capturas, screenshots, adjuntos) a texto con Tesseract para luego analizarlo con modelos de texto como `deepseek-reasoner`.
+
+**Uso:**
+```bash
+./scripts/image-ocr.sh <ruta_imagen>
+
+# Elegir idioma OCR
+./scripts/image-ocr.sh ./screenshots/captura.png --lang spa+eng
+
+# Guardar salida en txt o markdown
+./scripts/image-ocr.sh ./screenshots/captura.png --out /tmp/captura.txt
+./scripts/image-ocr.sh ./screenshots/captura.png --md ./memory/ocr-2026-04-15.md
+```
+
+**Qué hace:**
+- Ejecuta OCR en dos modos (`--psm 6` y `--psm 4`)
+- Selecciona automáticamente la mejor salida (más contenido)
+- Imprime el texto por stdout y opcionalmente lo guarda en archivo
 ## Flujo de Trabajo Recomendado
 
 ### Para desarrolladores locales:

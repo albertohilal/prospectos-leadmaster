@@ -61,8 +61,8 @@ function main() {
         console.log('❌ No se menciona el proyecto (Proyecto: ...)');
     }
 
-    // 4. Resumen ejecutivo (busca sección ## Resumen)
-    const resumenSection = lines.findIndex(line => line.match(/^##\s+Resumen/i));
+    // 4. Resumen ejecutivo (busca sección ## Resumen, permite emojis antes del texto)
+    const resumenSection = lines.findIndex(line => line.match(/^##\s+.*Resumen/i));
     if (resumenSection !== -1) {
         checks.tieneResumen = true;
         console.log('✅ Sección "Resumen" presente');
@@ -70,8 +70,8 @@ function main() {
         console.log('⚠️  No se encontró sección "Resumen" (recomendado)');
     }
 
-    // 5. Conclusión o Próximos Pasos (busca ## Conclusión o ## Próximos Pasos)
-    const conclusionIndex = lines.findIndex(line => line.match(/^##\s+(Conclusión|Conclusiones|Próximos Pasos|Recomendaciones)/i));
+    // 5. Conclusión o Próximos Pasos (busca ## Conclusión o ## Próximos Pasos, permite emojis)
+    const conclusionIndex = lines.findIndex(line => line.match(/^##\s+.*(Conclusión|Conclusiones|Próximos Pasos|Recomendaciones)/i));
     if (conclusionIndex !== -1) {
         checks.tieneConclusion = true;
         console.log('✅ Sección de conclusión o próximos pasos presente');
@@ -79,8 +79,8 @@ function main() {
         console.log('❌ No se encontró sección de conclusión o próximos pasos');
     }
 
-    // 6. Al menos otra sección ## además de Resumen/Conclusión
-    const secciones = lines.filter(line => line.match(/^##\s+\w+/)).length;
+    // 6. Al menos otra sección ## además de Resumen/Conclusión (permite emojis)
+    const secciones = lines.filter(line => line.match(/^##\s+.*[\w\p{Emoji}]/u)).length;
     if (secciones >= 2) {
         checks.tieneSecciones = true;
         console.log(`✅ Secciones de desarrollo presentes (${secciones} secciones ##)`);
