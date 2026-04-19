@@ -10,6 +10,7 @@
     "local:start": "node src/local/scraper-local.js",
     "db:status": "mysql -u leadmaster_user -pleadmaster_password -e \"USE leadmaster; SELECT COUNT(*) as total_prospectos FROM prospectos;\"",
     "db:view": "mysql -u leadmaster_user -pleadmaster_password -e \"USE leadmaster; SELECT id, palabra_clave, es_valido, DATE(fecha_hora) as fecha, LENGTH(texto_extraido) as chars FROM prospectos ORDER BY id DESC LIMIT 10;\"",
+    "stg:enrich-contact": "node scripts/enrich-stg-contact-from-landing.js",
     "dev": "concurrently \"npm run api:start\" \"npm run local:start\""
   },
   "keywords": ["scraper", "playwright", "mysql", "ocr", "lead-generation"],
