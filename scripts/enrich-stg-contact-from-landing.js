@@ -77,6 +77,7 @@ function cleanEmailCandidate(candidate) {
     .replace(/^[\"'(<\[]+/, '')
     .replace(/[\"')>\],;:]+$/, '')
     .replace(/\.(com|org|net|edu|gov)(ar|mx|uy|cl|br)$/i, '.$1.$2')
+    .replace(/\.(com|org|net|edu|gov)\.(ar|mx|uy|cl|br)[a-z]{1,4}$/i, '.$1.$2')
     .replace(/\.(com|org|net|edu|gov)(ar|mx|uy|cl|br)[a-z]{1,4}$/i, '.$1.$2')
     .replace(/(\.[a-z]{2,})\.$/i, '$1');
 }
@@ -89,6 +90,15 @@ function isLikelyValidEmail(email) {
     return false;
   }
   const domain = email.split('@')[1] || '';
+  if (!domain || domain.includes('..') || domain.startsWith('.') || domain.endsWith('.')) {
+    return false;
+  }
+
+  const labels = domain.split('.').filter(Boolean);
+  if (labels.length < 2 || labels.some((label) => !/^[a-z0-9-]+$/.test(label) || label.startsWith('-') || label.endsWith('-'))) {
+    return false;
+  }
+
   const blockedTlds = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'css', 'js']);
   const lastLabel = domain.split('.').pop() || '';
   if (blockedTlds.has(lastLabel)) {
@@ -327,6 +337,52 @@ function extractBestPhone(rawHtml, pageText, whatsapp) {
   return whatsapp || null;
 }
 
+function normalizeContactValue(type, value) {
+  if (!value) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  if (type === 'email') {
+    return text.toLowerCase();
+  }
+  if (type === 'telefono' || type === 'whatsapp') {
+    return text.replace(/[^\d]/g, '');
+  }
+  return text;
+}
+
+async function persistNormalizedContacts(db, row, contacts) {
+  for (const contact of contacts) {
+    if (!contact || !contact.value) {
+      continue;
+    }
+    const normalized = normalizeContactValue(contact.type, contact.value);
+    if (!normalized) {
+      continue;
+    }
+    await db.execute(
+      `INSERT INTO stg_prospectos_contactos
+         (stg_prospecto_id, prospecto_id, tipo, valor, valor_normalizado, es_principal, fuente, url_fuente)
+       VALUES (?, ?, ?, ?, ?, ?, 'landing', ?)
+       ON DUPLICATE KEY UPDATE
+         es_principal = GREATEST(es_principal, VALUES(es_principal)),
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        row.id,
+        row.prospecto_id,
+        contact.type,
+        contact.value,
+        normalized,
+        contact.isPrimary ? 1 : 0,
+        row.url_landing,
+      ]
+    );
+  }
+}
+
 async function fetchLanding(urlValue) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -356,6 +412,9 @@ async function main() {
 
   const db = await mysql.createConnection(DB_CONFIG);
   try {
+    const [contactTableRows] = await db.query("SHOW TABLES LIKE 'stg_prospectos_contactos'");
+    const hasNormalizedContactsTable = Array.isArray(contactTableRows) && contactTableRows.length > 0;
+
     const [schemaRows] = await db.query('SHOW COLUMNS FROM stg_prospectos');
     const availableColumns = new Set(schemaRows.map((row) => row.Field));
     const hasPhoneColumn = availableColumns.has('telefono_extraido');
@@ -421,6 +480,14 @@ async function main() {
         const finalEmail = extractedEmail || '';
         const finalPhone = extractedPhone || '';
         const finalWhatsapp = extractedWhatsapp || '';
+
+        if (hasNormalizedContactsTable && !dryRun) {
+          await persistNormalizedContacts(db, row, [
+            { type: 'email', value: finalEmail, isPrimary: finalEmail && finalEmail === storedEmail },
+            { type: 'telefono', value: finalPhone, isPrimary: finalPhone && finalPhone === storedPhone },
+            { type: 'whatsapp', value: finalWhatsapp, isPrimary: finalWhatsapp && finalWhatsapp === storedWhatsapp },
+          ]);
+        }
 
         const willUpdate =
           (finalEmail && finalEmail !== storedEmail) ||
