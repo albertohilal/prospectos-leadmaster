@@ -19,8 +19,12 @@ const EXCLUDED_URL_PATTERNS = [
   'ejemplo.com',
 ];
 
+const DISCOVERY_MAX_PAGES = parseInt(process.env.ENRICH_DISCOVERY_MAX_PAGES || '4', 10);
+const DISCOVERY_TIMEOUT_MS = parseInt(process.env.ENRICH_DISCOVERY_TIMEOUT_MS || '15000', 10);
+
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+const disableCleanup = args.includes('--no-clean');
 const limitArgIndex = args.findIndex((arg) => arg === '--limit');
 const limit =
   limitArgIndex >= 0 && args[limitArgIndex + 1]
@@ -30,6 +34,83 @@ const limit =
 if (Number.isNaN(limit) || limit <= 0) {
   console.error('❌ --limit debe ser un entero positivo');
   process.exit(1);
+}
+
+const STG_CLEANUP_WHERE = `
+  url_landing IS NULL
+  OR TRIM(url_landing) = ''
+  OR LOWER(url_landing) LIKE '%google.%'
+  OR LOWER(url_landing) LIKE '%/search%'
+  OR LOWER(url_landing) LIKE '%/sorry/%'
+  OR LOWER(url_landing) LIKE '%consent.%'
+  OR LOWER(url_landing) LIKE '%webhp%'
+  OR LOWER(url_landing) LIKE '%chrome-error://%'
+  OR LOWER(url_landing) LIKE '%api.whatsapp.com/send%'
+  OR LOWER(url_landing) LIKE '%ejemplo.com%'
+`;
+
+async function cleanupInvalidStageRows(db, { dryRunMode }) {
+  const [toCleanRows] = await db.query(
+    `SELECT id, prospecto_id, url_landing
+     FROM stg_prospectos
+     WHERE ${STG_CLEANUP_WHERE}
+     ORDER BY prospecto_id ASC
+     LIMIT 100`
+  );
+
+  const [countRows] = await db.query(
+    `SELECT COUNT(*) AS total_invalid
+     FROM stg_prospectos
+     WHERE ${STG_CLEANUP_WHERE}`
+  );
+
+  const totalInvalid = countRows[0]?.total_invalid || 0;
+  if (totalInvalid === 0) {
+    console.log('🧼 Limpieza previa: no se detectaron registros inválidos en stg_prospectos.');
+    return { totalInvalid: 0, deletedStageRows: 0, deletedContactRows: 0 };
+  }
+
+  console.log(`🧼 Limpieza previa: detectados ${totalInvalid} registros inválidos en stg_prospectos.`);
+  for (const row of toCleanRows) {
+    console.log(`   - prospecto_id=${row.prospecto_id} url=${row.url_landing || 'NULL'}`);
+  }
+  if (totalInvalid > toCleanRows.length) {
+    console.log(`   ... y ${totalInvalid - toCleanRows.length} más.`);
+  }
+
+  if (dryRunMode) {
+    console.log('🧪 Modo dry-run: no se eliminan registros inválidos.');
+    return { totalInvalid, deletedStageRows: 0, deletedContactRows: 0 };
+  }
+
+  await db.beginTransaction();
+  try {
+    const [contactDeleteResult] = await db.query(
+      `DELETE FROM stg_prospectos_contactos
+       WHERE stg_prospecto_id IN (
+         SELECT id FROM stg_prospectos WHERE ${STG_CLEANUP_WHERE}
+       )`
+    );
+
+    const [stageDeleteResult] = await db.query(
+      `DELETE FROM stg_prospectos
+       WHERE ${STG_CLEANUP_WHERE}`
+    );
+
+    await db.commit();
+    console.log(
+      `🧹 Limpieza aplicada: stg_prospectos=${stageDeleteResult.affectedRows || 0}, contactos=${contactDeleteResult.affectedRows || 0}.`
+    );
+
+    return {
+      totalInvalid,
+      deletedStageRows: stageDeleteResult.affectedRows || 0,
+      deletedContactRows: contactDeleteResult.affectedRows || 0,
+    };
+  } catch (error) {
+    await db.rollback();
+    throw error;
+  }
 }
 
 function isEligibleUrl(urlValue) {
@@ -114,6 +195,118 @@ function isLikelyValidEmail(email) {
     return false;
   }
   return true;
+}
+
+function isLikelyFormLanding(rawHtml = '', pageText = '') {
+  const html = String(rawHtml || '').toLowerCase();
+  const text = String(pageText || '').toLowerCase();
+  if (!html.includes('<form')) {
+    return false;
+  }
+  return /(cotizar|cotizaci[oó]n|contacto|enviar|solicitar|completar|presupuesto|dejanos tus datos)/i.test(text);
+}
+
+function shouldSkipDiscoveryTarget(urlValue, rootHostname) {
+  try {
+    const parsed = new URL(urlValue);
+    const hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    const root = (rootHostname || '').replace(/^www\./i, '').toLowerCase();
+    if (!hostname || !root) {
+      return true;
+    }
+    if (hostname !== root && !hostname.endsWith(`.${root}`)) {
+      return true;
+    }
+    const pathname = (parsed.pathname || '/').toLowerCase();
+    if (/(\.pdf|\.jpg|\.jpeg|\.png|\.gif|\.webp|\.svg|\.zip|\.rar|\.mp4|\.mp3|\.docx?|\.xlsx?)$/.test(pathname)) {
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function scoreDiscoveryUrl(urlValue) {
+  let score = 0;
+  const text = String(urlValue || '').toLowerCase();
+  if (/contacto|contact|empresa|nosotros|about|institucional|quienes-somos|sucursales|atencion/.test(text)) {
+    score += 10;
+  }
+  if (/cotiza|cotizador|checkout|carrito|producto|servicio/.test(text)) {
+    score -= 3;
+  }
+  if (/\?|#/.test(text)) {
+    score -= 1;
+  }
+  return score;
+}
+
+function extractCandidateLinks(rawHtml, currentUrl, rootHostname) {
+  const links = new Set();
+  const hrefRegex = /href\s*=\s*["']([^"']+)["']/gi;
+  let match;
+
+  while ((match = hrefRegex.exec(rawHtml)) !== null) {
+    const href = (match[1] || '').trim();
+    if (!href || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+      continue;
+    }
+
+    try {
+      const absolute = new URL(href, currentUrl).toString();
+      if (shouldSkipDiscoveryTarget(absolute, rootHostname)) {
+        continue;
+      }
+      links.add(absolute);
+    } catch {
+      continue;
+    }
+  }
+
+  return [...links].sort((left, right) => scoreDiscoveryUrl(right) - scoreDiscoveryUrl(left));
+}
+
+async function collectDiscoveryPages(initialUrl, initialHtml, initialText) {
+  const pages = [{ url: initialUrl, html: initialHtml, text: initialText }];
+  if (!DISCOVERY_MAX_PAGES || DISCOVERY_MAX_PAGES <= 1) {
+    return pages;
+  }
+
+  let rootHostname;
+  try {
+    rootHostname = new URL(initialUrl).hostname;
+  } catch {
+    return pages;
+  }
+
+  const visited = new Set([initialUrl]);
+  const queue = extractCandidateLinks(initialHtml, initialUrl, rootHostname);
+
+  while (queue.length > 0 && pages.length < DISCOVERY_MAX_PAGES) {
+    const candidateUrl = queue.shift();
+    if (!candidateUrl || visited.has(candidateUrl)) {
+      continue;
+    }
+    visited.add(candidateUrl);
+
+    try {
+      const page = await fetchLanding(candidateUrl);
+      const text = stripHtml(page.html);
+      pages.push({ url: page.finalUrl || candidateUrl, html: page.html, text });
+
+      const nested = extractCandidateLinks(page.html, page.finalUrl || candidateUrl, rootHostname);
+      for (const nextUrl of nested) {
+        if (!visited.has(nextUrl) && !queue.includes(nextUrl) && queue.length < DISCOVERY_MAX_PAGES * 4) {
+          queue.push(nextUrl);
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return pages;
 }
 
 function extractBestEmail(rawHtml, pageText, landingUrl) {
@@ -385,7 +578,7 @@ async function persistNormalizedContacts(db, row, contacts) {
 
 async function fetchLanding(urlValue) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
   try {
     const response = await fetch(urlValue, {
       method: 'GET',
@@ -401,17 +594,26 @@ async function fetchLanding(urlValue) {
       throw new Error(`HTTP ${response.status}`);
     }
     const html = await response.text();
-    return html;
+    return { html, finalUrl: response.url || urlValue };
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
 async function main() {
-  console.log(`🚀 Iniciando enriquecimiento contacto desde landing (limit=${limit}, dryRun=${dryRun})`);
+  console.log(
+    `🚀 Iniciando enriquecimiento contacto desde landing (limit=${limit}, dryRun=${dryRun}, cleanup=${disableCleanup ? 'off' : 'on'})`
+  );
 
   const db = await mysql.createConnection(DB_CONFIG);
   try {
+    let cleanupSummary = { totalInvalid: 0, deletedStageRows: 0, deletedContactRows: 0 };
+    if (!disableCleanup) {
+      cleanupSummary = await cleanupInvalidStageRows(db, { dryRunMode: dryRun });
+    } else {
+      console.log('⏭️  Limpieza previa deshabilitada por flag --no-clean');
+    }
+
     const [contactTableRows] = await db.query("SHOW TABLES LIKE 'stg_prospectos_contactos'");
     const hasNormalizedContactsTable = Array.isArray(contactTableRows) && contactTableRows.length > 0;
 
@@ -470,13 +672,24 @@ async function main() {
       const currentWhatsapp = isLikelyValidPhone(storedWhatsapp) ? normalizePhoneCandidate(storedWhatsapp) : '';
 
       try {
-        const html = await fetchLanding(row.url_landing);
-        const pageText = stripHtml(html);
+        const landing = await fetchLanding(row.url_landing);
+        const pageText = stripHtml(landing.html);
+        const landingEmailRaw = extractBestEmail(landing.html, pageText, row.url_landing);
 
-        const extractedEmailRaw = currentEmail || extractBestEmail(html, pageText, row.url_landing);
+        let discoveryPages = [{ url: landing.finalUrl || row.url_landing, html: landing.html, text: pageText }];
+        const hasLandingEmail = isLikelyValidEmail(landingEmailRaw || '');
+        const shouldDiscover = isBlank(currentEmail) && (!hasLandingEmail || isLikelyFormLanding(landing.html, pageText));
+        if (shouldDiscover) {
+          discoveryPages = await collectDiscoveryPages(landing.finalUrl || row.url_landing, landing.html, pageText);
+        }
+
+        const combinedHtml = discoveryPages.map((page) => page.html).join('\n');
+        const combinedText = discoveryPages.map((page) => page.text).join('\n');
+
+        const extractedEmailRaw = currentEmail || extractBestEmail(combinedHtml, combinedText, row.url_landing) || landingEmailRaw;
         const extractedEmail = isLikelyValidEmail(extractedEmailRaw || '') ? extractedEmailRaw : null;
-        const extractedWhatsapp = currentWhatsapp || extractBestWhatsapp(html, pageText);
-        const extractedPhone = currentPhone || extractBestPhone(html, pageText, extractedWhatsapp);
+        const extractedWhatsapp = currentWhatsapp || extractBestWhatsapp(combinedHtml, combinedText);
+        const extractedPhone = currentPhone || extractBestPhone(combinedHtml, combinedText, extractedWhatsapp);
         const finalEmail = extractedEmail || '';
         const finalPhone = extractedPhone || '';
         const finalWhatsapp = extractedWhatsapp || '';
@@ -531,7 +744,7 @@ async function main() {
         console.log(
           `✅ prospecto_id=${row.prospecto_id} email=${extractedEmail || '-'} direccion=${
             row.direccion_extraida ? String(row.direccion_extraida).slice(0, 80) : '-'
-          } tel=${finalPhone || '-'} wa=${finalWhatsapp || '-'
+          } tel=${finalPhone || '-'} wa=${finalWhatsapp || '-'} paginas=${discoveryPages.length
           }`
         );
       } catch (error) {
@@ -554,6 +767,9 @@ async function main() {
 
     console.log('');
     console.log('📌 Resumen');
+    console.log(
+      `- Limpieza previa: invalidos=${cleanupSummary.totalInvalid}, stg_eliminados=${cleanupSummary.deletedStageRows}, contactos_eliminados=${cleanupSummary.deletedContactRows}`
+    );
     console.log(`- Procesados OK: ${success}`);
     console.log(`- Con actualización de datos: ${updated}`);
     console.log(`- Con error fetch/parse: ${errors}`);

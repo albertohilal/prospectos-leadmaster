@@ -11,20 +11,24 @@ Crear un sistema automatizado que, usando OpenClaw, realice búsquedas en Google
 
 ## Fases
 
+### Estado de verificación (2026-05-07)
+- Criterio: se marca `[x]` cuando hay evidencia directa en el repositorio (código/scripts/SQL) o confirmación operativa explícita del entorno.
+- Confirmación operativa recibida: la base de datos vive en este servidor (`leadmaster`).
+
 ### Fase 1: Instalación de dependencias del sistema
 - [ ] Instalar MySQL Server y cliente
 - [ ] Instalar Tesseract OCR (español e inglés)
 - [ ] Instalar Chrome/Chromium
-- [ ] Instalar dependencias Node.js (playwright, mysql2, tesseract.js)
+- [x] Instalar dependencias Node.js (playwright, mysql2, tesseract.js)
 - [ ] Verificar que OpenClaw tenga permisos de `exec` y `browser`
 
 ### Fase 2: Configuración de base de datos
-- [ ] Crear base de datos `leadmaster`
-- [ ] Crear tabla `prospectos` con campos: id, palabra_clave, url_anuncio, url_landing, texto_extraido, fecha_hora, es_valido, etc.
+- [x] Crear base de datos `leadmaster`
+- [x] Crear tabla `prospectos` con campos: id, palabra_clave, url_anuncio, url_landing, texto_extraido, fecha_hora, es_valido, etc.
 - [ ] Configurar usuario y permisos
 
 ### Fase 3: Desarrollo del script Node.js (una palabra clave)
-- [ ] Escribir script `leadmaster_scraper.js` que:
+- [x] Escribir script `leadmaster_scraper.js` que:
   1. Tome una palabra clave como argumento
   2. Abra Chrome con Playwright
   3. Busque en Google la palabra clave
@@ -35,13 +39,13 @@ Crear un sistema automatizado que, usando OpenClaw, realice búsquedas en Google
   8. Conecte a MySQL y guarde el registro
   9. Maneje errores y timeouts
 - [ ] Probar cada componente por separado
-- [ ] Crear `package.json` con dependencias
+- [x] Crear `package.json` con dependencias
 
 ### Fase 4: Prueba integral con una palabra clave
 - [ ] Ejecutar script manualmente desde terminal SSH
 - [ ] Verificar que el registro se guarde en MySQL
 - [ ] Validar calidad del texto extraído
-- [ ] Ajustar selectores y parámetros según resultados
+- [x] Ajustar selectores y parámetros según resultados
 
 ### Fase 5: Integración con OpenClaw
 - [ ] Crear un Skill de OpenClaw que envuelva el script
@@ -52,7 +56,7 @@ Crear un sistema automatizado que, usando OpenClaw, realice búsquedas en Google
 ### Fase 6: Escalado y monitoreo
 - [ ] Ejecutar para las 20 palabras clave
 - [ ] Revisar prospectos, marcar válidos/inválidos
-- [ ] Optimizar selectores para mejorar tasa de acierto
+- [x] Optimizar selectores para mejorar tasa de acierto
 - [ ] Considerar uso de OpenAI API para clasificación automática (opcional)
 
 ## Lista de palabras clave
@@ -118,6 +122,15 @@ WHERE s.nom = 'leadmaster'
 ```
 
 ## Próximos pasos inmediatos
-1. Confirmar plan con el usuario
-2. Empezar Fase 1 (instalación de dependencias para Node.js)
-3. Documentar cada paso en memory/YYYY-MM-DD.md
+1. Verificar en servidor instalaciones reales pendientes: Tesseract y Chrome/Chromium.
+2. Confirmar credenciales/permisos del usuario MySQL en entorno productivo.
+3. Ejecutar validación integral (1 keyword): corrida + registro en MySQL + revisión de OCR.
+4. Definir integración real con OpenClaw (skill + permisos `exec`/`browser`) o formalizar orquestación con `scripts/run-daily-batch.sh`.
+5. Implementar criterio de corte por meta de 100 prospectos válidos y ejecución programada (`cron`).
+
+## Partes faltantes detectadas
+- Operación en servidor no verificada desde repo: instalación efectiva de Tesseract y Chrome/Chromium.
+- Evidencia de ejecución integral pendiente: corrida SSH + validación OCR + verificación explícita en MySQL.
+- Integración OpenClaw pendiente: no se detecta Skill o configuración del agente principal en el repo.
+- Automatización periódica pendiente: no hay `crontab` versionado en este proyecto.
+- Criterio de meta pendiente: no está implementado el corte explícito al llegar a 100 registros con `es_valido = TRUE`.

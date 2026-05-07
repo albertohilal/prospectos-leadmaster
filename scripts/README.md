@@ -104,13 +104,56 @@ bash ./scripts/run-daily-batch.sh --dry-run
 - Ejecuta OCR en dos modos (`--psm 6` y `--psm 4`)
 - Selecciona automáticamente la mejor salida (más contenido)
 - Imprime el texto por stdout y opcionalmente lo guarda en archivo
+
+### 7. `enrich-stg-contact-from-landing.js` - Enriquecimiento de contacto + limpieza de staging
+**Propósito:** enriquecer `stg_prospectos` con email/teléfono/whatsapp desde `url_landing` y ejecutar limpieza previa automática de registros inválidos.
+
+**Uso:**
+```bash
+# Corrida normal (aplica limpieza previa + enriquecimiento)
+node scripts/enrich-stg-contact-from-landing.js --limit 200
+
+# Modo simulación (no escribe ni elimina)
+node scripts/enrich-stg-contact-from-landing.js --limit 200 --dry-run
+
+# Desactivar limpieza previa (solo enriquecimiento)
+node scripts/enrich-stg-contact-from-landing.js --limit 200 --no-clean
+```
+
+**Limpieza previa automática (por defecto):**
+- Elimina de `stg_prospectos` y `stg_prospectos_contactos` registros con `url_landing` inválida/no prospectable.
+- Patrones incluidos: `NULL`, vacío, `google.*`, `/search`, `/sorry`, `consent`, `webhp`, `chrome-error://`, `api.whatsapp.com/send`, `ejemplo.com`.
+- En `--dry-run` solo reporta qué limpiaría.
+
+### 8. `enrich-stg-nom-from-landing.js` - Enriquecimiento de nombre de empresa (`nom`)
+**Propósito:** poblar `stg_prospectos.nom` con el nombre de empresa, alineado con `llxbx_societe.nom`.
+
+**Uso seguro recomendado (sin riesgo de IP):**
+```bash
+# Solo inferencia local (sin requests externos)
+node scripts/enrich-stg-nom-from-landing.js --limit 200 --dry-run
+node scripts/enrich-stg-nom-from-landing.js --limit 200
+```
+
+**Fallback web opcional (muy controlado):**
+```bash
+# Habilita fetch web con límite de requests y delay alto entre requests
+node scripts/enrich-stg-nom-from-landing.js --limit 100 --allow-fetch --max-fetch 10 --min-delay-ms 8000 --max-delay-ms 15000
+```
+
+**Controles anti-riesgo de IP (por defecto):**
+- Sin tráfico externo si no se pasa `--allow-fetch`.
+- Si hay `--allow-fetch`, usa baja frecuencia y límite de requests.
+- Reutiliza cache por dominio para evitar repetir consultas innecesarias.
 ## Flujo de Trabajo Recomendado
 
 ### Para desarrolladores locales:
 1. **Precheck:** `./scripts/run-local.sh`
 2. **Ejecutar captura:** `node src/local/scraper-local.js "palabra clave"`
 3. **Alternativa semiautomatizada:** `bash ./scripts/run-daily-batch.sh --target 2`
-3. **Verificar resultados:** Conectarse al VPS y revisar base de datos
+4. **Enriquecer staging (incluye limpieza previa):** `node scripts/enrich-stg-contact-from-landing.js --limit 200`
+5. **Poblar nombre comercial (`nom`) sin red:** `node scripts/enrich-stg-nom-from-landing.js --limit 200`
+6. **Verificar resultados:** Conectarse al VPS y revisar base de datos
 
 ### Para despliegue de cambios:
 1. **Precheck local:** `./scripts/run-local.sh`
