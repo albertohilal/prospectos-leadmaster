@@ -83,6 +83,40 @@ Crear un sistema automatizado que, usando OpenClaw, realice búsquedas en Google
 - **mysql2**: Conexión a base de datos MySQL
 - **OpenClaw**: Orquestación y programación (cron)
 
+## Regla de equivalencia de cliente (IUNAORG)
+
+- La clave de tenencia de datos **no es arbitraria**.
+- Equivalencia oficial: `iunaorg_dyd.ll_usuarios.cliente_id = iunaorg_dyd.llbx_societe.rowid`.
+- En altas de usuarios (`ll_usuarios`), el valor de `cliente_id` debe derivarse de la sociedad (`llbx_societe`) correspondiente al cliente.
+
+### SQL de validación de equivalencia
+
+```sql
+SELECT u.id,
+       u.usuario,
+       u.cliente_id,
+       s.rowid AS societe_rowid,
+       s.nom   AS cliente_nombre
+FROM iunaorg_dyd.ll_usuarios u
+JOIN iunaorg_dyd.llbx_societe s
+  ON s.rowid = u.cliente_id
+ORDER BY u.id DESC;
+```
+
+### SQL recomendado para alta de usuario respetando equivalencia
+
+```sql
+INSERT INTO iunaorg_dyd.ll_usuarios (cliente_id, usuario, passh, tipo, activo)
+SELECT s.rowid, 'usuario_nuevo', '$2b$10$HASH_BCRYPT', 'cliente', 1
+FROM iunaorg_dyd.llbx_societe s
+WHERE s.nom = 'leadmaster'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM iunaorg_dyd.ll_usuarios u
+    WHERE u.usuario = 'usuario_nuevo'
+  );
+```
+
 ## Próximos pasos inmediatos
 1. Confirmar plan con el usuario
 2. Empezar Fase 1 (instalación de dependencias para Node.js)
