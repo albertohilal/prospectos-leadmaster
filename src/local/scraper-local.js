@@ -22,6 +22,7 @@ const LOCAL_CONFIG = {
   ...config.local,
   captureDelay: parseInt(process.env.LOCAL_CAPTURE_DELAY_MS || '') || 1200,
   autoScrollBeforeCapture: process.env.LOCAL_AUTOSCROLL !== 'false',
+  screenshotEnabled: process.env.LOCAL_SCREENSHOT_ENABLED === 'true',
   browser: {
     ...config.browser,
     headless: false, // Siempre visible para interacción humana
@@ -172,8 +173,24 @@ async function sendToAPI(prospectoData) {
       },
       body: JSON.stringify(prospectoData)
     });
-    
-    const result = await response.json();
+
+    const contentType = response.headers.get('content-type') || '';
+    const responseText = await response.text();
+    let result = null;
+
+    if (responseText) {
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        const preview = responseText.slice(0, 500);
+        console.error(`❌ Respuesta no JSON de API. HTTP ${response.status}. Content-Type: ${contentType || 'desconocido'}`);
+        console.error(`❌ Primeros 500 caracteres de respuesta: ${preview}`);
+        return {
+          success: false,
+          error: `Respuesta no JSON de API (HTTP ${response.status})`
+        };
+      }
+    }
     
     if (response.ok) {
       console.log(`✅ Prospecto enviado exitosamente (ID: ${result.data?.id})`);
@@ -187,8 +204,8 @@ async function sendToAPI(prospectoData) {
         error: result.message || 'Prospecto duplicado'
       };
     } else {
-      console.error(`❌ Error API: ${result.error || 'Unknown error'}`);
-      return { success: false, error: result.error };
+      console.error(`❌ Error API: ${result?.error || result?.message || `HTTP ${response.status}`}`);
+      return { success: false, error: result?.error || result?.message || `HTTP ${response.status}` };
     }
   } catch (error) {
     console.error('❌ Error enviando a API:', error.message);
@@ -287,6 +304,7 @@ async function searchAndWaitForClicks(keyword, runtimeOptions) {
   let searchResultsUrl = null;
   let resolveExit = null;
   let stopRequested = false;
+  let pendingNewTabProcessing = Promise.resolve();
 
   const requestStop = (message) => {
     if (stopRequested) {
@@ -341,13 +359,46 @@ async function searchAndWaitForClicks(keyword, runtimeOptions) {
     console.log('👉 Cuando navegues a una landing page, el script capturará automáticamente.\n');
     
     // 4. Monitorear cambios de URL (nuevas pestañas o navegaciones)
-    context.on('page', async (newPage) => {
-      console.log('🔄 Nueva pestaña detectada...');
-      const processed = await handleLandingPage(newPage, keyword, prospectCount + 1, runtimeOptions);
-      if (processed) {
-        prospectCount++;
-        checkTargetReached();
-      }
+    context.on('page', (newPage) => {
+      pendingNewTabProcessing = pendingNewTabProcessing
+        .catch(() => null)
+        .then(async () => {
+          console.log('🔄 Nueva pestaña detectada...');
+
+          try {
+            await newPage.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => null);
+            await newPage.waitForTimeout(2000);
+
+            let finalUrl = newPage.url();
+            console.log(`🌐 URL final en nueva pestaña: ${finalUrl}`);
+
+            if (!isValidLandingUrl(finalUrl)) {
+              console.log('⚠️  Nueva pestaña todavía no tiene landing válida. Esperando redirección final...');
+              await newPage.waitForTimeout(3000);
+              finalUrl = newPage.url();
+              console.log(`🌐 URL final reintentada en nueva pestaña: ${finalUrl}`);
+            }
+
+            if (!isValidLandingUrl(finalUrl)) {
+              console.log(`⚠️  Nueva pestaña con URL inválida (ignorando): ${finalUrl}`);
+              return;
+            }
+
+            const processed = await handleLandingPage(
+              newPage,
+              keyword,
+              prospectCount + 1,
+              runtimeOptions
+            );
+
+            if (processed) {
+              prospectCount++;
+              checkTargetReached();
+            }
+          } catch (error) {
+            console.warn(`⚠️  Error procesando nueva pestaña: ${error.message}`);
+          }
+        });
     });
     
     // También monitorear navegaciones en la página principal
@@ -482,14 +533,20 @@ async function handleLandingPage(page, keyword, prospectNumber, runtimeOptions) 
 
     // Agregar landing normalizada al conjunto de capturadas de sesión
     capturedUrls.add(landingKey);
-    
-    // Capturar screenshot
-    console.log('📸 Capturando landing page...');
-    const screenshotResult = await captureScreenshot(page, keyword);
-    
-    if (!screenshotResult) {
-      console.log('⚠️  No se pudo capturar screenshot, continuando...');
-      return false;
+
+    let screenshotBase64 = null;
+    if (LOCAL_CONFIG.screenshotEnabled) {
+      console.log('📸 Capturando landing page...');
+      const screenshotResult = await captureScreenshot(page, keyword);
+
+      if (!screenshotResult) {
+        console.log('⚠️  No se pudo capturar screenshot, continuando...');
+        return false;
+      }
+
+      screenshotBase64 = screenshotResult.screenshotBase64;
+    } else {
+      console.log('📸 Screenshot suspendido temporalmente. Se enviará solo URL de landing.');
     }
     
     // Enviar a API
@@ -497,7 +554,7 @@ async function handleLandingPage(page, keyword, prospectNumber, runtimeOptions) 
       keyword,
       adUrl: null, // No tenemos URL del anuncio en este flujo
       landingUrl,
-      screenshotBase64: screenshotResult.screenshotBase64
+      screenshotBase64
     };
     
     const apiResult = await sendToAPI(prospectoData);
