@@ -1,12 +1,52 @@
 # Prospectos LeadMaster
 
-Sistema híbrido humano-automático para recolectar prospectos de anuncios patrocinados, combinando interacción humana con automatización backend.
+Sistema híbrido humano-automático para recolectar prospectos de anuncios patrocinados, priorizando la captura asistida de URLs finales de landing pages con interacción humana y automatización backend.
 
 ## 🎯 Objetivo
 
 Capturar landing pages de anuncios patrocinados en motores de búsqueda (Google, Bing) mediante:
-1. **Interfaz humana**: El usuario hace clic en anuncios desde su navegador local (evitando CAPTCHA)
-2. **Automatización backend**: Captura automática de pantalla, OCR y almacenamiento en MySQL
+1. **Interfaz humana**: el usuario hace clic en anuncios desde un navegador local visible, reduciendo bloqueos por automatización.
+2. **Automatización backend**: detección de la URL final de landing (`url_landing`), envío del prospecto y almacenamiento en MySQL.
+
+La captura de pantalla de la landing puede conservarse como evidencia documental del hallazgo, pero no constituye el método principal de extracción. El flujo vigente prioriza la URL final de landing (`url_landing`) y reserva la extracción de datos para una etapa posterior de scraping/enriquecimiento.
+
+## Estado vigente del flujo
+
+```text
+keyword desde base de datos o batch
+→ navegación visible con Playwright
+→ clic humano en anuncio
+→ captura de URL final de landing
+→ captura de pantalla opcional como evidencia documental
+→ guardado de prospecto/landing
+→ segunda pasada futura de scraping/enriquecimiento
+```
+
+**Etapa futura:** Para la segunda pasada sobre landings se evaluará usar un navegador aislado/privado no basado en Chrome, por ejemplo Firefox controlado por Playwright con contexto limpio. Esta etapa no está implementada en este ajuste.
+
+## SearXNG local como apoyo auxiliar
+
+SearXNG fue usado como componente auxiliar de búsqueda/consulta local. Puede servir como apoyo para explorar resultados y reducir dependencia directa de un único motor de búsqueda, pero no reemplaza el flujo principal de LeadMaster.
+
+El flujo principal sigue siendo:
+
+- búsqueda por keyword;
+- navegador visible controlado por Playwright;
+- clic humano en anuncio;
+- captura de `url_landing`;
+- captura opcional como evidencia documental.
+
+Datos documentados del componente local:
+
+```text
+Carpeta: AUXILIAR/searxng-local/
+Compose: AUXILIAR/searxng-local/docker-compose.yml
+Config: AUXILIAR/searxng-local/searxng/settings.yml
+URL local: http://127.0.0.1:18080
+Servicio systemd: searxng-local.service
+```
+
+SearXNG no es un navegador privado, no reemplaza Chrome/Playwright para la interacción humana, no reemplaza la captura de `url_landing` y no reemplaza la futura segunda pasada de scraping/enriquecimiento sobre landings. Para esa etapa posterior se mantiene como criterio evaluar un navegador aislado/privado no basado en Chrome, por ejemplo Firefox controlado por Playwright con contexto limpio.
 
 ## 📁 Estructura del Proyecto
 
@@ -32,18 +72,18 @@ prospectos-leadmaster/
 
 ### 1. **Script Local (`src/local/scraper-local.js`)**
 - **Ejecución**: En tu PC con Node.js
-- **Función**: Abre Chrome, realiza búsqueda, espera clics manuales en anuncios
+- **Función**: Abre Chrome visible, realiza búsqueda, espera clics manuales en anuncios y captura la URL final de landing
 - **Ventaja**: Tráfico humano real, sin bloqueos CAPTCHA
 - **Uso**: `node scraper-local.js "palabra clave"`
 
 ### 2. **API Backend (`src/api/server.js`)**
 - **Ejecución**: En VPS (servidor Node.js + Express)
-- **Función**: Recibe prospectos vía HTTP, guarda en MySQL, gestiona OCR
+- **Función**: Recibe prospectos vía HTTP, guarda `url_landing` y evidencia opcional en MySQL
 - **Endpoints**: `POST /api/prospectos` - Guardar landing page
 
 ### 3. **Scraper Automático (`src/scraper/leadmaster_scraper.js`)**
 - **Ejecución**: En VPS (headless con xvfb)
-- **Función**: Scraping completamente automático (actualmente bloqueado por Google CAPTCHA)
+- **Función**: Scraping automático histórico/auxiliar (actualmente bloqueado por Google CAPTCHA)
 - **Uso**: Para motores menos restrictivos (Bing, DuckDuckGo)
 
 ## 🛠️ Configuración Inicial
@@ -86,12 +126,14 @@ npm install playwright mysql2 tesseract.js
 3. **Interacción**:
    - El script abre Chrome con resultados de búsqueda
    - Tú haces clic manualmente en anuncios patrocinados
-   - El script detecta landing page y envía captura al API
+   - El script detecta la URL final de landing y la envía al API
+   - Opcionalmente conserva una captura de pantalla de la landing como evidencia documental
 
 4. **Resultado**:
-   - Landing page capturada como imagen
-   - Texto extraído via OCR
-   - Prospecto guardado en MySQL
+   - `url_landing` guardada como dato principal
+   - Captura de pantalla opcional como respaldo documental
+   - Prospecto/landing guardado en MySQL
+   - Extracción estructurada reservada para una segunda pasada futura sobre la landing capturada
 
 ### Scripts disponibles
 ```bash
@@ -130,10 +172,10 @@ npm run db:view
 Tabla `prospectos` almacena:
 - `palabra_clave`: Término buscado
 - `url_anuncio`: URL del anuncio en motor de búsqueda
-- `url_landing`: URL de la landing page
-- `texto_extraido`: Texto extraído por OCR
+- `url_landing`: URL final de la landing page capturada como dato principal
+- `texto_extraido`: Campo heredado o auxiliar; no es el núcleo del flujo vigente
 - `es_valido`: NULL (no evaluado), TRUE (válido), FALSE (inválido)
-- `metadata`: JSON con rutas de screenshot, errores, etc.
+- `metadata`: JSON con rutas de screenshot, errores, fecha/hora de captura u otros datos de evidencia
 
 ## 🐛 Solución de Problemas
 
@@ -145,17 +187,20 @@ Tabla `prospectos` almacena:
 - Verificar que el VPS permita conexiones en puerto 3000
 - Configurar CORS si se accede desde otro dominio
 
-### OCR de baja calidad
-- Ajustar parámetros de Tesseract en configuración
-- Verificar idiomas instalados: `tesseract --list-langs`
+### OCR histórico o auxiliar
+- OCR no es el método principal vigente de extracción en esta etapa.
+- Si se usa para pruebas o soporte documental, verificar idiomas instalados: `tesseract --list-langs`.
+- La extracción estructurada recomendada queda para una segunda pasada de scraping/enriquecimiento sobre `url_landing`.
 
 ## 🔮 Próximas Mejoras
 
 1. **Interfaz web** para gestionar palabras clave y visualizar prospectos
-2. **Clasificación automática** con OpenAI API
-3. **Integración con OpenClaw** para orquestación avanzada
-4. **Soporte multi-motor** (Google, Bing, Yahoo)
-5. **Dashboard de métricas** y reportes
+2. **Segunda pasada de scraping/enriquecimiento** sobre URLs de landing capturadas
+3. **Evaluación de navegador aislado/privado** no basado en Chrome para esa segunda pasada, por ejemplo Firefox con contexto limpio de Playwright
+4. **Clasificación automática** con OpenAI API
+5. **Integración con OpenClaw** para orquestación avanzada
+6. **Soporte multi-motor** (Google, Bing, Yahoo)
+7. **Dashboard de métricas** y reportes
 
 ## 📄 Licencia
 

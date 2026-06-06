@@ -1,14 +1,16 @@
 # LeadMaster Scraper
 
-Sistema automatizado en Node.js para recolectar prospectos de anuncios patrocinados en Google Chrome y guardarlos en MySQL.
+Sistema Node.js para recolectar prospectos de anuncios patrocinados mediante busqueda por keyword, navegador visible, clic humano en anuncios y captura de la URL final de landing page como dato principal.
+
+La captura de pantalla de la landing puede conservarse como evidencia documental de respaldo. OCR no forma parte del flujo principal vigente; la extraccion estructurada de datos queda prevista para una segunda pasada futura de scraping/enriquecimiento sobre la landing capturada.
 
 ## Características
 
 - 🔍 **Búsqueda en Google** por palabra clave
-- 🎯 **Detección de anuncios patrocinados** con múltiples selectores
-- 📸 **Captura de pantalla completa** de landing pages
-- 🔠 **OCR con Tesseract.js** para extraer texto de imágenes
-- 🗄️ **Almacenamiento en MySQL** con metadatos completos
+- 🎯 **Navegación visible y clic humano** en anuncios patrocinados
+- 🔗 **Captura de URL final de landing** como dato principal (`url_landing`)
+- 📸 **Captura de pantalla opcional** de landing pages como evidencia documental
+- 🗄️ **Almacenamiento en MySQL** con metadatos y evidencia
 - 🛡️ **Manejo robusto de errores** y timeouts
 - 📊 **Registro de actividad** en base de datos
 
@@ -16,7 +18,7 @@ Sistema automatizado en Node.js para recolectar prospectos de anuncios patrocina
 
 - **Node.js 18+** y npm
 - **MySQL 8+** (instalado y ejecutándose)
-- **Tesseract OCR** (binario instalado en el sistema)
+- **Tesseract OCR** solo si se usan funciones historicas o auxiliares fuera del flujo principal vigente
 - **Chromium/Chrome** (instalado, Playwright lo maneja automáticamente)
 
 ## Instalación
@@ -31,7 +33,37 @@ Sistema automatizado en Node.js para recolectar prospectos de anuncios patrocina
    - Usuario: `leadmaster_user`
    - Contraseña: `leadmaster_password`
 
-## Uso
+## Uso vigente recomendado
+
+El flujo local recomendado se ejecuta con navegador visible y requiere interaccion humana:
+
+```bash
+node src/local/scraper-local.js "palabra clave"
+```
+
+El script abre resultados de busqueda, espera clics manuales en anuncios patrocinados, detecta la URL final de landing y envia el prospecto a la API.
+
+La captura de pantalla de la landing puede guardarse como evidencia documental, pero no reemplaza la segunda pasada futura de scraping/enriquecimiento.
+
+## SearXNG como apoyo de busqueda
+
+SearXNG fue usado en el proyecto como componente auxiliar de búsqueda/consulta local. Puede apoyar la exploracion de resultados o consultas complementarias, pero no forma parte critica del flujo principal del scraper local.
+
+Datos documentados:
+
+```text
+Carpeta: AUXILIAR/searxng-local/
+Compose: AUXILIAR/searxng-local/docker-compose.yml
+Config: AUXILIAR/searxng-local/searxng/settings.yml
+URL local: http://127.0.0.1:18080
+Servicio systemd: searxng-local.service
+```
+
+SearXNG no es un navegador privado, no reemplaza el navegador visible controlado por Playwright, no reemplaza la captura de `url_landing` y no reemplaza la futura segunda pasada de scraping/enriquecimiento sobre landings. Cuando esa segunda pasada se implemente, se evaluará un navegador aislado/privado no basado en Chrome, por ejemplo Firefox con contexto limpio de Playwright.
+
+## Uso historico/automatico
+
+El script `src/scraper/leadmaster_scraper.js` corresponde al enfoque automatico/headless anterior. Puede conservarse como referencia o soporte para motores menos restrictivos, pero no representa el flujo principal vigente para esta etapa.
 
 ### Ejecutar con una palabra clave
 ```bash
@@ -65,12 +97,14 @@ leadmaster_scraper.js
 │   ├── initBrowser()       # Iniciar navegador Playwright
 │   ├── searchGoogle()      # Buscar palabra clave
 │   ├── findAndClickSponsoredAd() # Detectar y clic en anuncios
-│   ├── takeScreenshot()    # Captura completa de página
-│   ├── extractTextFromImage() # OCR con Tesseract.js
+│   ├── takeScreenshot()    # Captura opcional como evidencia documental
+│   ├── extractTextFromImage() # OCR historico/auxiliar, fuera del flujo principal vigente
 │   ├── saveToDatabase()    # Guardar resultados
 │   └── run()               # Flujo principal
 └── Manejo de argumentos CLI
 ```
+
+Para el flujo local vigente, la pieza principal es `src/local/scraper-local.js`, que prioriza navegacion visible, clic humano y obtencion de `url_landing`.
 
 ## Personalización
 
@@ -99,8 +133,8 @@ browser: {
 }
 ```
 
-### Idiomas OCR
-El script usa español + inglés por defecto. Para cambiar los idiomas en Tesseract:
+### OCR historico o auxiliar
+OCR queda fuera del flujo principal vigente. Si se usa para pruebas o compatibilidad con datos heredados, el script puede emplear español + inglés por defecto. Para cambiar los idiomas en Tesseract:
 ```javascript
 const { data: { text } } = await Tesseract.recognize(
   imagePath,
@@ -117,11 +151,11 @@ const { data: { text } } = await Tesseract.recognize(
 | id | INT | ID autoincremental |
 | palabra_clave | VARCHAR(255) | Palabra clave buscada |
 | url_anuncio | TEXT | URL del anuncio en Google |
-| url_landing | TEXT | URL de la landing page |
-| texto_extraido | LONGTEXT | Texto extraído por OCR |
+| url_landing | TEXT | URL final de la landing page; dato principal del flujo vigente |
+| texto_extraido | LONGTEXT | Campo heredado o auxiliar; OCR no es el metodo principal vigente |
 | fecha_hora | TIMESTAMP | Fecha y hora de captura |
 | es_valido | BOOLEAN | NULL: no evaluado, TRUE: válido, FALSE: inválido |
-| metadata | JSON | Metadatos adicionales (ruta screenshot, errores, etc.) |
+| metadata | JSON | Metadatos adicionales: ruta screenshot, errores, evidencia, etc. |
 | created_at, updated_at | TIMESTAMP | Fechas de creación/actualización |
 
 ### Consultas útiles
@@ -157,20 +191,23 @@ GROUP BY es_valido;
 - Verifica que MySQL esté ejecutándose: `sudo systemctl status mysql`
 - Verifica credenciales en `config.db`
 
-### Error de OCR
-- Asegúrate de que Tesseract esté instalado: `tesseract --version`
-- Verifica que el screenshot se haya guardado correctamente.
+### OCR historico o auxiliar
+- OCR no es el metodo principal vigente.
+- Si se usa para pruebas o soporte documental, asegúrate de que Tesseract esté instalado: `tesseract --version`.
+- Verifica que el screenshot se haya guardado correctamente solo si necesitas evidencia visual u OCR auxiliar.
 
 ### Timeouts
 - Ajusta los timeouts en `config.timeouts` si la conexión es lenta.
 
 ## Próximos Pasos
 
-1. **Ejecutar prueba inicial** con una palabra clave
-2. **Ajustar selectores** según resultados
-3. **Integrar con OpenClaw** para automatización
-4. **Agregar análisis de texto** con OpenAI API
-5. **Programar ejecuciones periódicas** con cron
+1. **Ejecutar prueba inicial** con una palabra clave en el flujo local visible
+2. **Validar `url_landing`** como dato principal capturado
+3. **Conservar screenshots** solo como evidencia documental cuando aporte trazabilidad
+4. **Implementar una segunda pasada futura** de scraping/enriquecimiento sobre landings capturadas
+5. **Evaluar para esa etapa futura** un navegador aislado/privado no basado en Chrome, por ejemplo Firefox con contexto limpio de Playwright
+6. **Integrar con OpenClaw** para automatización
+7. **Programar ejecuciones periódicas** cuando el flujo este estabilizado
 
 ## Licencia
 MIT - Ver archivo LICENSE

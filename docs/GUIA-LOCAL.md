@@ -1,6 +1,8 @@
 # Guía: Ejecutar LeadMaster en tu PC Local
 
-Esta guía explica cómo ejecutar el sistema LeadMaster en tu PC local, combinando interacción humana (clic en anuncios) con automatización backend (captura, OCR, almacenamiento).
+Esta guía explica cómo ejecutar el sistema LeadMaster en tu PC local, combinando interacción humana (clic en anuncios) con automatización backend para capturar URLs finales de landing pages y guardarlas como dato principal.
+
+La PC local prioriza la obtención de landing pages reales mediante navegador visible. La captura de pantalla de la landing puede conservarse como evidencia documental de respaldo; OCR queda como función histórica, auxiliar o fuera del alcance principal vigente.
 
 ## 📋 Requisitos Previos
 
@@ -107,9 +109,10 @@ node src/local/scraper-local.js "presupuesto para reforma de oficinas en CABA"
 1. **El script abre Chrome** con resultados de búsqueda de Google
 2. **Tú haces clic manualmente** en anuncios patrocinados
 3. **El script detecta automáticamente** cuando navegas a una landing page
-4. **Captura screenshot completo** de la landing page
-5. **Envía datos a la API** en el VPS
-6. **Pregunta si quieres capturar otro anuncio**
+4. **Captura la URL final** de la landing como dato principal
+5. **Puede capturar screenshot completo** de la landing page como evidencia documental de respaldo
+6. **Envía datos a la API** en el VPS
+7. **Pregunta si quieres capturar otro anuncio**
 
 ### 4. Verificar resultados
 
@@ -131,6 +134,22 @@ Editar `src/local/scraper-local.js`, línea ~90:
 // Cambiar de Google a Bing
 const googleUrl = 'https://www.bing.com/?cc=ar';
 ```
+
+### SearXNG local como apoyo auxiliar
+
+SearXNG puede usarse como componente auxiliar de búsqueda/consulta local para explorar resultados y complementar el análisis operativo. No es crítico para el flujo principal y no reemplaza el navegador visible controlado por Playwright.
+
+Datos documentados:
+
+```text
+Carpeta: AUXILIAR/searxng-local/
+Compose: AUXILIAR/searxng-local/docker-compose.yml
+Config: AUXILIAR/searxng-local/searxng/settings.yml
+URL local: http://127.0.0.1:18080
+Servicio systemd: searxng-local.service
+```
+
+El flujo vigente sigue siendo: keyword, navegador visible con Playwright, clic humano en anuncio, captura de `url_landing`, screenshot opcional como evidencia y guardado del prospecto/landing. SearXNG no es el navegador aislado/privado previsto para la futura segunda pasada de scraping/enriquecimiento, ni reemplaza esa etapa posterior.
 
 ### Ajustar tiempo de espera
 
@@ -206,13 +225,23 @@ SELECT * FROM prospectos ORDER BY id DESC LIMIT 5;
 SELECT palabra_clave, COUNT(*) FROM prospectos GROUP BY palabra_clave;
 ```
 
+### Dato principal y evidencia
+
+En el flujo vigente, el dato principal a validar es `url_landing`. La captura de pantalla puede conservarse para auditoría visual del hallazgo, junto con la fecha/hora, la keyword asociada y la ruta del archivo si corresponde.
+
+El campo `texto_extraido` puede existir en la base como campo heredado o auxiliar, pero OCR no debe considerarse el método principal de extracción en esta etapa.
+
 ## 🔮 Próximos Pasos
 
 ### Automatización parcial
 Una vez que domines el flujo manual, puedes:
-1. Crear lista de palabras clave en archivo `keywords.txt`
-2. Script que procese automáticamente cada palabra clave
-3. Programar ejecuciones periódicas
+1. Usar keywords desde batch o desde la tabla operativa de keywords.
+2. Procesar lotes controlados manteniendo interacción humana para anuncios.
+3. Programar ejecuciones periódicas cuando el flujo esté estabilizado.
+
+### Segunda pasada de enriquecimiento
+
+La extracción estructurada de datos queda prevista para una etapa posterior sobre la URL de landing capturada. Para esa etapa se evaluará usar un navegador aislado/privado no basado en Chrome, por ejemplo Firefox controlado por Playwright con contexto limpio. Esa segunda pasada no está implementada en esta guía.
 
 ### Interfaz web
 Desarrollar frontend web para:
@@ -229,7 +258,7 @@ Integrar con OpenAI API para:
 ## ❓ Preguntas Frecuentes
 
 ### ¿Puedo usar otro navegador?
-Sí, Playwright soporta Firefox y WebKit. Cambia `chromium` por `firefox` o `webkit` en el script.
+Sí, Playwright soporta Firefox y WebKit. En el flujo local vigente se usa navegador visible para interacción humana. Para una segunda pasada futura sobre landings se evaluará usar un navegador aislado/privado no basado en Chrome, por ejemplo Firefox con contexto limpio.
 
 ### ¿Se almacenan imágenes en mi PC?
 Sí, temporalmente en `src/local/temp_screenshots/`. Se envían al VPS y luego se pueden eliminar.
