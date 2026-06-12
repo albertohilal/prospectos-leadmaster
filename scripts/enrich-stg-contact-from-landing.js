@@ -19,20 +19,65 @@ const EXCLUDED_URL_PATTERNS = [
   'ejemplo.com',
 ];
 
+const BLOCKED_EMAILS = new Set([
+  'tu@email.com',
+  'nombre@ejemplo.com',
+  'test@test.com',
+  'test@example.com',
+  'email@email.com',
+  'correo@correo.com',
+  'mail@mail.com',
+]);
+
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  'example.com',
+  'ejemplo.com',
+]);
+
 const DISCOVERY_MAX_PAGES = parseInt(process.env.ENRICH_DISCOVERY_MAX_PAGES || '4', 10);
 const DISCOVERY_TIMEOUT_MS = parseInt(process.env.ENRICH_DISCOVERY_TIMEOUT_MS || '15000', 10);
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
-const disableCleanup = args.includes('--no-clean');
 const limitArgIndex = args.findIndex((arg) => arg === '--limit');
 const limit =
   limitArgIndex >= 0 && args[limitArgIndex + 1]
     ? parseInt(args[limitArgIndex + 1], 10)
     : 50;
+const noOverwrite = args.includes('--no-overwrite');
+const prospectoFromArgIndex = args.findIndex((arg) => arg === '--prospecto-from');
+const prospectoToArgIndex = args.findIndex((arg) => arg === '--prospecto-to');
+const prospectoFrom =
+  prospectoFromArgIndex >= 0 && args[prospectoFromArgIndex + 1]
+    ? parseInt(args[prospectoFromArgIndex + 1], 10)
+    : null;
+const prospectoTo =
+  prospectoToArgIndex >= 0 && args[prospectoToArgIndex + 1]
+    ? parseInt(args[prospectoToArgIndex + 1], 10)
+    : null;
 
 if (Number.isNaN(limit) || limit <= 0) {
   console.error('❌ --limit debe ser un entero positivo');
+  process.exit(1);
+}
+
+if ((prospectoFrom === null) !== (prospectoTo === null)) {
+  console.error('❌ --prospecto-from y --prospecto-to deben usarse juntos');
+  process.exit(1);
+}
+
+if (prospectoFrom !== null && (Number.isNaN(prospectoFrom) || prospectoFrom <= 0)) {
+  console.error('❌ --prospecto-from debe ser un entero positivo');
+  process.exit(1);
+}
+
+if (prospectoTo !== null && (Number.isNaN(prospectoTo) || prospectoTo <= 0)) {
+  console.error('❌ --prospecto-to debe ser un entero positivo');
+  process.exit(1);
+}
+
+if (prospectoFrom !== null && prospectoTo !== null && prospectoFrom > prospectoTo) {
+  console.error('❌ --prospecto-from no puede ser mayor que --prospecto-to');
   process.exit(1);
 }
 
@@ -167,10 +212,16 @@ function isLikelyValidEmail(email) {
   if (!email) {
     return false;
   }
+  if (BLOCKED_EMAILS.has(email)) {
+    return false;
+  }
   if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)) {
     return false;
   }
   const domain = email.split('@')[1] || '';
+  if (BLOCKED_EMAIL_DOMAINS.has(domain)) {
+    return false;
+  }
   if (!domain || domain.includes('..') || domain.startsWith('.') || domain.endsWith('.')) {
     return false;
   }
@@ -189,9 +240,6 @@ function isLikelyValidEmail(email) {
     return false;
   }
   if (/(com|org|net|edu|gov)[a-z]{3,}$/.test(lastLabel)) {
-    return false;
-  }
-  if (email.includes('example.com')) {
     return false;
   }
   return true;
@@ -602,17 +650,13 @@ async function fetchLanding(urlValue) {
 
 async function main() {
   console.log(
-    `🚀 Iniciando enriquecimiento contacto desde landing (limit=${limit}, dryRun=${dryRun}, cleanup=${disableCleanup ? 'off' : 'on'})`
+    `🚀 Iniciando enriquecimiento contacto desde landing (limit=${limit}, dryRun=${dryRun}, cleanup=off, noOverwrite=${noOverwrite}, prospectoRange=${prospectoFrom !== null ? `${prospectoFrom}-${prospectoTo}` : 'all'})`
   );
 
   const db = await mysql.createConnection(DB_CONFIG);
   try {
-    let cleanupSummary = { totalInvalid: 0, deletedStageRows: 0, deletedContactRows: 0 };
-    if (!disableCleanup) {
-      cleanupSummary = await cleanupInvalidStageRows(db, { dryRunMode: dryRun });
-    } else {
-      console.log('⏭️  Limpieza previa deshabilitada por flag --no-clean');
-    }
+    const cleanupSummary = { totalInvalid: 0, deletedStageRows: 0, deletedContactRows: 0 };
+    console.log('⏭️  Limpieza previa deshabilitada en modo conservador.');
 
     const [contactTableRows] = await db.query("SHOW TABLES LIKE 'stg_prospectos_contactos'");
     const hasNormalizedContactsTable = Array.isArray(contactTableRows) && contactTableRows.length > 0;
@@ -637,26 +681,55 @@ async function main() {
       selectFields.push('whatsapp_extraido');
     }
 
-    const [rows] = await db.query(
+    const selectWhereClauses = [
+      'url_landing IS NOT NULL',
+      "TRIM(url_landing) <> ''",
+    ];
+    const selectParams = [];
+
+    if (prospectoFrom !== null && prospectoTo !== null) {
+      selectWhereClauses.push('prospecto_id BETWEEN ? AND ?');
+      selectParams.push(prospectoFrom, prospectoTo);
+    }
+
+    const [rows] = await db.execute(
       `SELECT ${selectFields.join(', ')}
        FROM stg_prospectos
-       WHERE url_landing IS NOT NULL
-         AND TRIM(url_landing) <> ''
+       WHERE ${selectWhereClauses.join('\n         AND ')}
        ORDER BY prospecto_id ASC
-       LIMIT ${safeLimit}`
+       LIMIT ${safeLimit}`,
+      selectParams
     );
 
-    const queue = rows.filter(
-      (row) => {
-        const needsEmail = isBlank(row.email_extraido) || !isLikelyValidEmail(cleanEmailCandidate(row.email_extraido));
-        const needsPhone = hasPhoneColumn && (isBlank(row.telefono_extraido) || !isLikelyValidPhone(row.telefono_extraido));
-        const needsWhatsapp =
-          hasWhatsappColumn && (isBlank(row.whatsapp_extraido) || !isLikelyValidPhone(row.whatsapp_extraido));
-        return isEligibleUrl(row.url_landing) && (needsEmail || needsPhone || needsWhatsapp);
+    let skippedExisting = 0;
+    const queue = rows.filter((row) => {
+      if (!isEligibleUrl(row.url_landing)) {
+        return false;
       }
-    );
 
-    console.log(`📊 Registros leídos: ${rows.length} | En cola efectiva: ${queue.length}`);
+      const needsEmail = noOverwrite
+        ? isBlank(row.email_extraido)
+        : isBlank(row.email_extraido) || !isLikelyValidEmail(cleanEmailCandidate(row.email_extraido));
+      const needsPhone = hasPhoneColumn
+        && (noOverwrite
+          ? isBlank(row.telefono_extraido)
+          : isBlank(row.telefono_extraido) || !isLikelyValidPhone(row.telefono_extraido));
+      const needsWhatsapp = hasWhatsappColumn
+        && (noOverwrite
+          ? isBlank(row.whatsapp_extraido)
+          : isBlank(row.whatsapp_extraido) || !isLikelyValidPhone(row.whatsapp_extraido));
+
+      const shouldProcess = needsEmail || needsPhone || needsWhatsapp;
+      if (!shouldProcess && noOverwrite) {
+        skippedExisting += 1;
+      }
+
+      return shouldProcess;
+    });
+
+    console.log(`📊 Registros leídos: ${rows.length}`);
+    console.log(`📥 En cola efectiva: ${queue.length}`);
+    console.log(`⏭️  Omitidos por datos existentes: ${skippedExisting}`);
 
     let success = 0;
     let updated = 0;
@@ -686,13 +759,19 @@ async function main() {
         const combinedHtml = discoveryPages.map((page) => page.html).join('\n');
         const combinedText = discoveryPages.map((page) => page.text).join('\n');
 
-        const extractedEmailRaw = currentEmail || extractBestEmail(combinedHtml, combinedText, row.url_landing) || landingEmailRaw;
+        const extractedEmailRaw = noOverwrite
+          ? extractBestEmail(combinedHtml, combinedText, row.url_landing) || landingEmailRaw
+          : currentEmail || extractBestEmail(combinedHtml, combinedText, row.url_landing) || landingEmailRaw;
         const extractedEmail = isLikelyValidEmail(extractedEmailRaw || '') ? extractedEmailRaw : null;
-        const extractedWhatsapp = currentWhatsapp || extractBestWhatsapp(combinedHtml, combinedText);
-        const extractedPhone = currentPhone || extractBestPhone(combinedHtml, combinedText, extractedWhatsapp);
-        const finalEmail = extractedEmail || '';
-        const finalPhone = extractedPhone || '';
-        const finalWhatsapp = extractedWhatsapp || '';
+        const extractedWhatsapp = noOverwrite
+          ? extractBestWhatsapp(combinedHtml, combinedText)
+          : currentWhatsapp || extractBestWhatsapp(combinedHtml, combinedText);
+        const extractedPhone = noOverwrite
+          ? extractBestPhone(combinedHtml, combinedText, extractedWhatsapp)
+          : currentPhone || extractBestPhone(combinedHtml, combinedText, extractedWhatsapp);
+        const finalEmail = noOverwrite ? (isBlank(storedEmail) ? extractedEmail || '' : storedEmail) : extractedEmail || '';
+        const finalPhone = noOverwrite ? (isBlank(storedPhone) ? extractedPhone || '' : storedPhone) : extractedPhone || '';
+        const finalWhatsapp = noOverwrite ? (isBlank(storedWhatsapp) ? extractedWhatsapp || '' : storedWhatsapp) : extractedWhatsapp || '';
 
         if (hasNormalizedContactsTable && !dryRun) {
           await persistNormalizedContacts(db, row, [
@@ -710,17 +789,30 @@ async function main() {
         if (willUpdate) {
           updated += 1;
           if (!dryRun) {
-            const updateClauses = [
-              "email_extraido = COALESCE(NULLIF(?, ''), email_extraido)",
-            ];
-            const updateParams = [finalEmail];
+            const updateClauses = [];
+            const updateParams = [];
+
+            if (noOverwrite) {
+              updateClauses.push("email_extraido = CASE WHEN email_extraido IS NULL OR TRIM(email_extraido) = '' THEN COALESCE(NULLIF(?, ''), email_extraido) ELSE email_extraido END");
+            } else {
+              updateClauses.push("email_extraido = COALESCE(NULLIF(?, ''), email_extraido)");
+            }
+            updateParams.push(finalEmail);
 
             if (hasPhoneColumn) {
-              updateClauses.push("telefono_extraido = COALESCE(NULLIF(?, ''), telefono_extraido)");
+              if (noOverwrite) {
+                updateClauses.push("telefono_extraido = CASE WHEN telefono_extraido IS NULL OR TRIM(telefono_extraido) = '' THEN COALESCE(NULLIF(?, ''), telefono_extraido) ELSE telefono_extraido END");
+              } else {
+                updateClauses.push("telefono_extraido = COALESCE(NULLIF(?, ''), telefono_extraido)");
+              }
               updateParams.push(finalPhone);
             }
             if (hasWhatsappColumn) {
-              updateClauses.push("whatsapp_extraido = COALESCE(NULLIF(?, ''), whatsapp_extraido)");
+              if (noOverwrite) {
+                updateClauses.push("whatsapp_extraido = CASE WHEN whatsapp_extraido IS NULL OR TRIM(whatsapp_extraido) = '' THEN COALESCE(NULLIF(?, ''), whatsapp_extraido) ELSE whatsapp_extraido END");
+              } else {
+                updateClauses.push("whatsapp_extraido = COALESCE(NULLIF(?, ''), whatsapp_extraido)");
+              }
               updateParams.push(finalWhatsapp);
             }
 
@@ -770,6 +862,9 @@ async function main() {
     console.log(
       `- Limpieza previa: invalidos=${cleanupSummary.totalInvalid}, stg_eliminados=${cleanupSummary.deletedStageRows}, contactos_eliminados=${cleanupSummary.deletedContactRows}`
     );
+    console.log(`- Registros leídos: ${rows.length}`);
+    console.log(`- En cola efectiva: ${queue.length}`);
+    console.log(`- Omitidos por datos existentes: ${skippedExisting}`);
     console.log(`- Procesados OK: ${success}`);
     console.log(`- Con actualización de datos: ${updated}`);
     console.log(`- Con error fetch/parse: ${errors}`);

@@ -323,14 +323,25 @@ async function main() {
 
   const db = await mysql.createConnection(DB_CONFIG);
   try {
-    const [rows] = await db.query(
-      `SELECT id, prospecto_id, url_landing, email_extraido, nom
-       FROM stg_prospectos
-       WHERE (nom IS NULL OR TRIM(nom) = '')
-       ORDER BY prospecto_id ASC
-       LIMIT ?`,
-      [limit]
-    );
+   const [rows] = await db.query(
+  `SELECT id, prospecto_id, url_landing, email_extraido, nom
+   FROM stg_prospectos
+   WHERE (nom IS NULL OR TRIM(nom) = '')
+     AND url_landing IS NOT NULL
+     AND TRIM(url_landing) <> ''
+     AND LOWER(url_landing) NOT LIKE '%google.%'
+     AND LOWER(url_landing) NOT LIKE '%/search%'
+     AND LOWER(url_landing) NOT LIKE '%/sorry/%'
+     AND LOWER(url_landing) NOT LIKE '%consent.%'
+     AND LOWER(url_landing) NOT LIKE '%webhp%'
+     AND LOWER(url_landing) NOT LIKE '%chrome-error://%'
+     AND LOWER(url_landing) NOT LIKE '%api.whatsapp.com/send%'
+     AND LOWER(url_landing) NOT LIKE '%ejemplo.com%'
+     AND LOWER(TRIM(url_landing)) NOT IN ('null', 'null/')
+   ORDER BY prospecto_id ASC
+   LIMIT ?`,
+  [limit]
+);
 
     console.log(`📊 Filas candidatas: ${rows.length}`);
 
