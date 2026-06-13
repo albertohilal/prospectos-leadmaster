@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const mysql = require('mysql2/promise');
 const { URL } = require('url');
 
 const DB_CONFIG = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'leadmaster_user',
-  password: process.env.DB_PASSWORD || 'leadmaster_password',
-  database: process.env.DB_NAME || 'leadmaster',
+  host: process.env.DB_HOST || process.env.KEYWORDS_DB_HOST || '127.0.0.1',
+  port: Number(process.env.DB_PORT || process.env.KEYWORDS_DB_PORT || 3306),
+  user: process.env.DB_USER || process.env.KEYWORDS_DB_USER || '',
+  password: process.env.DB_PASSWORD || process.env.KEYWORDS_DB_PASSWORD || '',
+  database: process.env.DB_NAME || process.env.KEYWORDS_DB_NAME || 'iunaorg_dyd',
 };
 
 const EXCLUDED_URL_PATTERNS = [
@@ -97,7 +98,7 @@ const STG_CLEANUP_WHERE = `
 async function cleanupInvalidStageRows(db, { dryRunMode }) {
   const [toCleanRows] = await db.query(
     `SELECT id, prospecto_id, url_landing
-     FROM stg_prospectos
+     FROM la_stg_prospectos
      WHERE ${STG_CLEANUP_WHERE}
      ORDER BY prospecto_id ASC
      LIMIT 100`
@@ -105,7 +106,7 @@ async function cleanupInvalidStageRows(db, { dryRunMode }) {
 
   const [countRows] = await db.query(
     `SELECT COUNT(*) AS total_invalid
-     FROM stg_prospectos
+      FROM la_stg_prospectos
      WHERE ${STG_CLEANUP_WHERE}`
   );
 
@@ -131,14 +132,14 @@ async function cleanupInvalidStageRows(db, { dryRunMode }) {
   await db.beginTransaction();
   try {
     const [contactDeleteResult] = await db.query(
-      `DELETE FROM stg_prospectos_contactos
+      `DELETE FROM la_stg_prospectos_contactos
        WHERE stg_prospecto_id IN (
-         SELECT id FROM stg_prospectos WHERE ${STG_CLEANUP_WHERE}
+         SELECT id FROM la_stg_prospectos WHERE ${STG_CLEANUP_WHERE}
        )`
     );
 
     const [stageDeleteResult] = await db.query(
-      `DELETE FROM stg_prospectos
+      `DELETE FROM la_stg_prospectos
        WHERE ${STG_CLEANUP_WHERE}`
     );
 
@@ -605,7 +606,7 @@ async function persistNormalizedContacts(db, row, contacts) {
       continue;
     }
     await db.execute(
-      `INSERT INTO stg_prospectos_contactos
+      `INSERT INTO la_stg_prospectos_contactos
          (stg_prospecto_id, prospecto_id, tipo, valor, valor_normalizado, es_principal, fuente, url_fuente)
        VALUES (?, ?, ?, ?, ?, ?, 'landing', ?)
        ON DUPLICATE KEY UPDATE
@@ -658,10 +659,10 @@ async function main() {
     const cleanupSummary = { totalInvalid: 0, deletedStageRows: 0, deletedContactRows: 0 };
     console.log('⏭️  Limpieza previa deshabilitada en modo conservador.');
 
-    const [contactTableRows] = await db.query("SHOW TABLES LIKE 'stg_prospectos_contactos'");
+    const [contactTableRows] = await db.query("SHOW TABLES LIKE 'la_stg_prospectos_contactos'");
     const hasNormalizedContactsTable = Array.isArray(contactTableRows) && contactTableRows.length > 0;
 
-    const [schemaRows] = await db.query('SHOW COLUMNS FROM stg_prospectos');
+    const [schemaRows] = await db.query('SHOW COLUMNS FROM la_stg_prospectos');
     const availableColumns = new Set(schemaRows.map((row) => row.Field));
     const hasPhoneColumn = availableColumns.has('telefono_extraido');
     const hasWhatsappColumn = availableColumns.has('whatsapp_extraido');
@@ -694,7 +695,7 @@ async function main() {
 
     const [rows] = await db.execute(
       `SELECT ${selectFields.join(', ')}
-       FROM stg_prospectos
+       FROM la_stg_prospectos
        WHERE ${selectWhereClauses.join('\n         AND ')}
        ORDER BY prospecto_id ASC
        LIMIT ${safeLimit}`,
@@ -824,7 +825,7 @@ async function main() {
             updateParams.push(row.id);
 
             await db.execute(
-              `UPDATE stg_prospectos
+              `UPDATE la_stg_prospectos
                SET ${updateClauses.join(',\n                   ')}
                WHERE id = ?`,
               updateParams
@@ -844,7 +845,7 @@ async function main() {
         const message = normalizeWhitespace(error.message || 'Error desconocido').slice(0, 400);
         if (!dryRun) {
           await db.execute(
-            `UPDATE stg_prospectos
+            `UPDATE la_stg_prospectos
              SET error_msg = ?,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,

@@ -1,4 +1,4 @@
-USE leadmaster;
+USE iunaorg_dyd;
 
 -- Migración segura e idempotente para deduplicación por URL landing.
 -- 1) Agrega columna generada url_landing_hash (SHA-256 normalizando espacios)
@@ -14,11 +14,11 @@ SET @sql_add_column := (
       SELECT 1
       FROM information_schema.columns
       WHERE table_schema = @schema_name
-        AND table_name = 'prospectos'
+        AND table_name = 'la_prospectos'
         AND column_name = 'url_landing_hash'
     ),
     'SELECT ''ℹ️ Columna url_landing_hash ya existe'' AS info',
-    'ALTER TABLE prospectos
+    'ALTER TABLE la_prospectos
        ADD COLUMN url_landing_hash CHAR(64)
        GENERATED ALWAYS AS (
          CASE
@@ -38,7 +38,7 @@ SELECT
   COUNT(*) AS duplicated_hash_groups
 FROM (
   SELECT url_landing_hash
-  FROM prospectos
+  FROM la_prospectos
   WHERE url_landing_hash IS NOT NULL
   GROUP BY url_landing_hash
   HAVING COUNT(*) > 1
@@ -49,7 +49,7 @@ SET @has_unique_index := (
   SELECT COUNT(*)
   FROM information_schema.statistics
   WHERE table_schema = @schema_name
-    AND table_name = 'prospectos'
+    AND table_name = 'la_prospectos'
     AND index_name = 'uq_prospectos_url_landing_hash'
 );
 
@@ -57,7 +57,7 @@ SET @duplicate_groups := (
   SELECT COUNT(*)
   FROM (
     SELECT url_landing_hash
-    FROM prospectos
+    FROM la_prospectos
     WHERE url_landing_hash IS NOT NULL
     GROUP BY url_landing_hash
     HAVING COUNT(*) > 1
@@ -71,7 +71,7 @@ SET @sql_add_unique := (
     IF(
       @duplicate_groups > 0,
       'SELECT ''⚠️ No se creó índice único: hay duplicados por url_landing_hash'' AS warning',
-      'ALTER TABLE prospectos
+      'ALTER TABLE la_prospectos
          ADD UNIQUE INDEX uq_prospectos_url_landing_hash (url_landing_hash)'
     )
   )
@@ -82,4 +82,4 @@ EXECUTE stmt_add_unique;
 DEALLOCATE PREPARE stmt_add_unique;
 
 -- Estado final
-SHOW INDEX FROM prospectos WHERE Key_name = 'uq_prospectos_url_landing_hash';
+SHOW INDEX FROM la_prospectos WHERE Key_name = 'uq_prospectos_url_landing_hash';

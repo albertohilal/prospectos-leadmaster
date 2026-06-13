@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const mysql = require('mysql2/promise');
 
 const DB_CONFIG = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'leadmaster_user',
-  password: process.env.DB_PASSWORD || 'leadmaster_password',
-  database: process.env.DB_NAME || 'leadmaster',
+  host: process.env.DB_HOST || process.env.KEYWORDS_DB_HOST || '127.0.0.1',
+  port: Number(process.env.DB_PORT || process.env.KEYWORDS_DB_PORT || 3306),
+  user: process.env.DB_USER || process.env.KEYWORDS_DB_USER || '',
+  password: process.env.DB_PASSWORD || process.env.KEYWORDS_DB_PASSWORD || '',
+  database: process.env.DB_NAME || process.env.KEYWORDS_DB_NAME || 'iunaorg_dyd',
 };
 
 const args = process.argv.slice(2);
@@ -325,7 +326,7 @@ async function main() {
   try {
    const [rows] = await db.query(
   `SELECT id, prospecto_id, url_landing, email_extraido, nom
-   FROM stg_prospectos
+  FROM la_stg_prospectos
    WHERE (nom IS NULL OR TRIM(nom) = '')
      AND url_landing IS NOT NULL
      AND TRIM(url_landing) <> ''
@@ -400,7 +401,7 @@ async function main() {
 
       if (!dryRun) {
         await db.execute(
-          `UPDATE stg_prospectos
+          `UPDATE la_stg_prospectos
            SET nom = ?,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?

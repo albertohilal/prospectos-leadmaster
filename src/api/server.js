@@ -8,7 +8,7 @@
  */
 
 // Cargar variables de entorno
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const express = require('express');
 const cors = require('cors');
@@ -113,7 +113,7 @@ async function saveProspecto(prospectoData) {
   
   try {
     const query = `
-      INSERT INTO prospectos 
+      INSERT INTO la_prospectos 
       (palabra_clave, url_anuncio, url_landing, texto_extraido, metadata) 
       VALUES (?, ?, ?, ?, ?)
     `;
@@ -154,7 +154,7 @@ async function findDuplicateProspectId(keyword, landingUrl) {
   const landingKey = buildLandingKey(landingUrl);
 
   const [rows] = await dbConnection.execute(
-    `SELECT id FROM prospectos
+    `SELECT id FROM la_prospectos
      WHERE palabra_clave = ?
        AND LOWER(TRIM(TRAILING '/' FROM SUBSTRING_INDEX(url_landing, '?', 1))) = ?
      LIMIT 1`,
@@ -378,14 +378,14 @@ app.get('/api/prospectos', async (req, res) => {
     const [rows] = await dbConnection.execute(
       `SELECT id, palabra_clave, url_landing, DATE(created_at) as fecha, 
               LENGTH(texto_extraido) as texto_len, es_valido
-       FROM prospectos 
+       FROM la_prospectos 
        ORDER BY id DESC 
        LIMIT ? OFFSET ?`,
       [limit, offset]
     );
     
     const [countResult] = await dbConnection.execute(
-      'SELECT COUNT(*) as total FROM prospectos'
+      'SELECT COUNT(*) as total FROM la_prospectos'
     );
     
     res.json({
@@ -411,7 +411,7 @@ app.get('/api/prospectos', async (req, res) => {
 app.get('/api/prospectos/:id', async (req, res) => {
   try {
     const [rows] = await dbConnection.execute(
-      `SELECT * FROM prospectos WHERE id = ?`,
+      `SELECT * FROM la_prospectos WHERE id = ?`,
       [req.params.id]
     );
     
@@ -443,7 +443,7 @@ app.put('/api/prospectos/:id/validate', async (req, res) => {
     }
     
     await dbConnection.execute(
-      `UPDATE prospectos SET es_valido = ? WHERE id = ?`,
+      `UPDATE la_prospectos SET es_valido = ? WHERE id = ?`,
       [es_valido, req.params.id]
     );
     

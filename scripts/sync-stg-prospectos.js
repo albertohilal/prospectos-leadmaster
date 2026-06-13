@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const mysql = require('mysql2/promise');
 
@@ -38,11 +38,11 @@ async function syncStgProspectos() {
   const clienteId = Number(process.env.STG_CLIENTE_ID || 52);
 
   const db = await mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'leadmaster_user',
-    password: process.env.DB_PASSWORD || 'leadmaster_password',
-    database: process.env.DB_NAME || 'leadmaster'
+    host: process.env.DB_HOST || process.env.KEYWORDS_DB_HOST || '127.0.0.1',
+    port: Number(process.env.DB_PORT || process.env.KEYWORDS_DB_PORT || 3306),
+    user: process.env.DB_USER || process.env.KEYWORDS_DB_USER || '',
+    password: process.env.DB_PASSWORD || process.env.KEYWORDS_DB_PASSWORD || '',
+    database: process.env.DB_NAME || process.env.KEYWORDS_DB_NAME || 'iunaorg_dyd'
   });
 
   try {
@@ -54,7 +54,7 @@ async function syncStgProspectos() {
 
     const [prospectos] = await db.execute(
       `SELECT id, palabra_clave, url_landing, texto_extraido
-       FROM prospectos`
+       FROM la_prospectos`
     );
 
     let inserted = 0;
@@ -74,7 +74,7 @@ async function syncStgProspectos() {
       }
 
       const [result] = await db.execute(
-        `INSERT INTO stg_prospectos
+        `INSERT INTO la_stg_prospectos
            (prospecto_id, cliente_id, ref_ext, palabra_clave, url_landing, texto_extraido, place_id, estado)
          VALUES (?, ?, ?, ?, ?, ?, NULL, 'pendiente_place_id')
          ON DUPLICATE KEY UPDATE

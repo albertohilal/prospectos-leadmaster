@@ -1,6 +1,6 @@
-USE leadmaster;
+USE iunaorg_dyd;
 
-CREATE TABLE IF NOT EXISTS prospectos (
+CREATE TABLE IF NOT EXISTS la_prospectos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     palabra_clave VARCHAR(255) NOT NULL,
     url_anuncio TEXT,
