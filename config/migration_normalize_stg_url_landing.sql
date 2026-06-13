@@ -1,4 +1,4 @@
-USE leadmaster;
+USE iunaorg_dyd;
 
 DROP TRIGGER IF EXISTS trg_stg_prospectos_url_normalize_bi;
 DROP TRIGGER IF EXISTS trg_stg_prospectos_url_normalize_bu;
@@ -6,7 +6,7 @@ DROP TRIGGER IF EXISTS trg_stg_prospectos_url_normalize_bu;
 DELIMITER $$
 
 CREATE TRIGGER trg_stg_prospectos_url_normalize_bi
-BEFORE INSERT ON stg_prospectos
+BEFORE INSERT ON la_stg_prospectos
 FOR EACH ROW
 BEGIN
   IF NEW.url_landing IS NOT NULL THEN
@@ -24,7 +24,7 @@ BEGIN
 END$$
 
 CREATE TRIGGER trg_stg_prospectos_url_normalize_bu
-BEFORE UPDATE ON stg_prospectos
+BEFORE UPDATE ON la_stg_prospectos
 FOR EACH ROW
 BEGIN
   IF NEW.url_landing IS NOT NULL THEN
@@ -43,7 +43,7 @@ END$$
 
 DELIMITER ;
 
-UPDATE stg_prospectos
+UPDATE la_stg_prospectos
 SET url_landing = NULLIF(
   TRIM(
     SUBSTRING_INDEX(

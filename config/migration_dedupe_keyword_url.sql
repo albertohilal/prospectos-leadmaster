@@ -1,4 +1,4 @@
-USE leadmaster;
+USE iunaorg_dyd;
 
 -- Migración: deduplicación por combinación palabra_clave + url_landing_hash
 -- Objetivo:
@@ -15,11 +15,11 @@ SET @sql_add_column := (
       SELECT 1
       FROM information_schema.columns
       WHERE table_schema = @schema_name
-        AND table_name = 'prospectos'
+        AND table_name = 'la_prospectos'
         AND column_name = 'url_landing_hash'
     ),
     'SELECT ''ℹ️ Columna url_landing_hash ya existe'' AS info',
-    'ALTER TABLE prospectos
+    'ALTER TABLE la_prospectos
        ADD COLUMN url_landing_hash CHAR(64)
        GENERATED ALWAYS AS (
          CASE
@@ -41,10 +41,10 @@ SET @sql_drop_old_unique := (
       SELECT 1
       FROM information_schema.statistics
       WHERE table_schema = @schema_name
-        AND table_name = 'prospectos'
+        AND table_name = 'la_prospectos'
         AND index_name = 'uq_prospectos_url_landing_hash'
     ),
-    'ALTER TABLE prospectos DROP INDEX uq_prospectos_url_landing_hash',
+    'ALTER TABLE la_prospectos DROP INDEX uq_prospectos_url_landing_hash',
     'SELECT ''ℹ️ Índice uq_prospectos_url_landing_hash no existe'' AS info'
   )
 );
@@ -58,7 +58,7 @@ SELECT
   COUNT(*) AS duplicated_keyword_url_groups
 FROM (
   SELECT palabra_clave, url_landing_hash
-  FROM prospectos
+  FROM la_prospectos
   WHERE url_landing_hash IS NOT NULL
   GROUP BY palabra_clave, url_landing_hash
   HAVING COUNT(*) > 1
@@ -69,7 +69,7 @@ SET @has_new_unique := (
   SELECT COUNT(*)
   FROM information_schema.statistics
   WHERE table_schema = @schema_name
-    AND table_name = 'prospectos'
+    AND table_name = 'la_prospectos'
     AND index_name = 'uq_prospectos_keyword_url_hash'
 );
 
@@ -77,7 +77,7 @@ SET @duplicate_groups := (
   SELECT COUNT(*)
   FROM (
     SELECT palabra_clave, url_landing_hash
-    FROM prospectos
+    FROM la_prospectos
     WHERE url_landing_hash IS NOT NULL
     GROUP BY palabra_clave, url_landing_hash
     HAVING COUNT(*) > 1
@@ -91,7 +91,7 @@ SET @sql_add_new_unique := (
     IF(
       @duplicate_groups > 0,
       'SELECT ''⚠️ No se creó índice único compuesto: hay duplicados por palabra_clave + url_landing_hash'' AS warning',
-      'ALTER TABLE prospectos
+      'ALTER TABLE la_prospectos
          ADD UNIQUE INDEX uq_prospectos_keyword_url_hash (palabra_clave, url_landing_hash)'
     )
   )
@@ -101,4 +101,4 @@ PREPARE stmt_add_new_unique FROM @sql_add_new_unique;
 EXECUTE stmt_add_new_unique;
 DEALLOCATE PREPARE stmt_add_new_unique;
 
-SHOW INDEX FROM prospectos WHERE Key_name IN ('uq_prospectos_url_landing_hash', 'uq_prospectos_keyword_url_hash');
+SHOW INDEX FROM la_prospectos WHERE Key_name IN ('uq_prospectos_url_landing_hash', 'uq_prospectos_keyword_url_hash');

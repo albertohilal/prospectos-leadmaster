@@ -3,14 +3,15 @@
  */
 
 // Cargar variables de entorno
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 // Configuración de base de datos MySQL
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'leadmaster_user',
-  password: process.env.DB_PASSWORD || 'leadmaster_password',
-  database: process.env.DB_NAME || 'leadmaster',
+  host: process.env.DB_HOST || process.env.KEYWORDS_DB_HOST || '127.0.0.1',
+  port: parseInt(process.env.DB_PORT || process.env.KEYWORDS_DB_PORT, 10) || 3306,
+  user: process.env.DB_USER || process.env.KEYWORDS_DB_USER || '',
+  password: process.env.DB_PASSWORD || process.env.KEYWORDS_DB_PASSWORD || '',
+  database: process.env.DB_NAME || process.env.KEYWORDS_DB_NAME || 'iunaorg_dyd',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0

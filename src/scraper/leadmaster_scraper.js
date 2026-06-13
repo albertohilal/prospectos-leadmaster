@@ -9,6 +9,7 @@
 
 const fs = require('fs').promises;
 const path = require('path');
+require('dotenv').config({ override: true });
 const { chromium } = require('playwright');
 const mysql = require('mysql2/promise');
 const Tesseract = require('tesseract.js');
@@ -17,10 +18,11 @@ const Tesseract = require('tesseract.js');
 const config = {
   // Base de datos MySQL
   db: {
-    host: 'localhost',
-    user: 'leadmaster_user',
-    password: 'leadmaster_password',
-    database: 'leadmaster',
+    host: process.env.DB_HOST || process.env.KEYWORDS_DB_HOST || '127.0.0.1',
+    port: Number(process.env.DB_PORT || process.env.KEYWORDS_DB_PORT || 3306),
+    user: process.env.DB_USER || process.env.KEYWORDS_DB_USER || '',
+    password: process.env.DB_PASSWORD || process.env.KEYWORDS_DB_PASSWORD || '',
+    database: process.env.DB_NAME || process.env.KEYWORDS_DB_NAME || 'iunaorg_dyd',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -451,7 +453,7 @@ class LeadMasterScraper {
           : this.result.landingUrl;
 
       const query = `
-        INSERT INTO prospectos 
+        INSERT INTO la_prospectos 
         (palabra_clave, url_anuncio, url_landing, texto_extraido, es_valido, metadata) 
         VALUES (?, ?, ?, ?, ?, ?)
       `;
@@ -488,7 +490,7 @@ class LeadMasterScraper {
           let duplicateId = null;
           if (normalizedLandingUrl) {
             const [rows] = await this.dbConnection.execute(
-              `SELECT id FROM prospectos
+              `SELECT id FROM la_prospectos
                WHERE url_landing_hash = SHA2(TRIM(?), 256)
                LIMIT 1`,
               [normalizedLandingUrl]
