@@ -17,6 +17,20 @@ const dbConfig = {
   queueLimit: 0
 };
 
+// En esta fase, DOLIBARR_DB_* representa la conexion operativa compartida a
+// iunaorg_dyd, donde viven la_prospectos, la_stg_prospectos y
+// la_stg_prospectos_contactos. llxbx_societe sigue fuera del alcance de edicion.
+const operationalDbConfig = {
+  host: process.env.DOLIBARR_DB_HOST || '127.0.0.1',
+  port: parseInt(process.env.DOLIBARR_DB_PORT, 10) || 3306,
+  user: process.env.DOLIBARR_DB_USER || '',
+  password: process.env.DOLIBARR_DB_PASSWORD || '',
+  database: process.env.DOLIBARR_DB_NAME || 'iunaorg_dyd',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+};
+
 const dbSessionTimeZone = process.env.DB_TIMEZONE || '-03:00';
 
 // Configuración de la API
@@ -109,6 +123,7 @@ const timeouts = {
 
 module.exports = {
   db: dbConfig,
+  operationalDb: operationalDbConfig,
   dbSessionTimeZone,
   api: apiConfig,
   browser: browserConfig,
