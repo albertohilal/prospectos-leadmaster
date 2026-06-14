@@ -120,7 +120,7 @@ La marca `contacto_validado_at` se actualiza cuando se guarda una correccion, cu
 
 El archivo `config/migration_add_contacto_estado_stg_manual_20260614.sql` es documental y refleja lo ya aplicado manualmente en MySQL Workbench.
 
-El `PUT` sigue sin probarse contra datos reales en esta rama.
+El `PUT` fue probado posteriormente de forma controlada sobre un único registro real de staging, con backup puntual previo y sin tocar `llxbx_societe`.
 
 ## Archivos modificados
 
@@ -149,7 +149,7 @@ Tambien se verifico arranque parcial de la API hasta el punto de conexion, confi
 
 ### Limitaciones de validacion
 
-No se ejecuto una prueba real del `PUT` contra base porque el alcance de esta fase prohíbe modificar datos.
+Inicialmente no se habia ejecutado una prueba real del `PUT` contra base porque el alcance de esta fase prohíbe modificar datos. Posteriormente se completó una prueba controlada sobre un único registro real de staging, documentada más abajo.
 
 La primera validacion HTTP sobre puerto alternativo no pudo cerrarse porque la API carga `.env` con `override: true`, por lo que el `API_PORT` exportado por shell no desplaza el puerto configurado y el puerto `8080` ya estaba ocupado por otra instancia. Posteriormente se completó un smoke test HTTP controlado en el puerto `18080`, documentado más abajo.
 
@@ -241,6 +241,56 @@ Aclaraciones de este smoke test:
 - la instancia temporal fue apagada correctamente
 - el puerto `18080` quedó libre
 
+### Prueba controlada de PUT sobre staging
+
+Se ejecutó una única prueba controlada del endpoint:
+
+`PUT /api/prospectos/staging/259/contacto-manual`
+
+Caso usado:
+
+- `stg id: 259`
+- `prospecto_id: 145`
+- `nom: Xjcsensor`
+
+Backup previo:
+
+- `/root/leadmaster-backups/manual-put-259-20260614-232305/la_stg_prospectos_id_259.sql`
+- `/root/leadmaster-backups/manual-put-259-20260614-232305/la_stg_prospectos_contactos_stg_259.sql`
+
+Payload aplicado:
+
+- `contacto_estado = sin_email`
+- `contacto_validado_note = Validación manual: no se encontró email en landing; se conservan teléfono y WhatsApp extraídos.`
+
+Resultado:
+
+- `PUT` devolvió `success=true`
+- `updatedFields=[]`
+- `contacto_estado` quedó en `sin_email`
+- `contacto_validado_at` quedó informado
+- `contacto_validado_note` quedó informado
+- `email_extraido` permaneció `NULL`
+- `telefono_extraido` permaneció sin cambios
+- `whatsapp_extraido` permaneció sin cambios
+- `la_stg_prospectos_contactos` no cambió
+- `pagination.total` bajó de `38` a `37`
+- el caso `id 259` salió del listado de pendientes
+- no se tocó `llxbx_societe`
+- no se tocó PM2 producción
+- la API temporal fue usada en puerto `18080`
+- la API temporal fue apagada correctamente
+- el puerto `18080` quedó libre
+
+Nota técnica:
+
+- la terminal mostró caracteres acentuados como reemplazo visual
+- `HEX(contacto_validado_note)` confirmó almacenamiento UTF-8 correcto
+
+Decisión:
+
+- se conserva la corrección porque representa un estado operativo válido
+
 ## Conclusiones
 
 La base tecnica de backend queda lista para una UI futura de correccion manual:
@@ -249,9 +299,10 @@ La base tecnica de backend queda lista para una UI futura de correccion manual:
 - los endpoints de staging quedaron separados sobre `DOLIBARR_DB_*`
 - no se tocaron `.env`, migraciones ni tablas finales de Dolibarr
 - la API ya expone una superficie minima para listar pendientes y persistir correcciones manuales
+- el backend ya fue validado también con una prueba controlada de `PUT` para cambio de estado manual sin corrección de email/teléfono/WhatsApp
 
 ## Proximos pasos
 
-1. Definir una estrategia segura para probar `PUT /api/prospectos/staging/:id/contacto-manual`, preferentemente con un caso controlado y backup previo, porque modifica datos reales.
-2. Definir el contrato exacto de payload/response que consumira la futura UI administrativa.
-3. Implementar la UI del formulario sobre estos endpoints, manteniendo a `llxbx_societe` fuera de alcance hasta la fase de export controlada.
+1. Definir el contrato final de payload/response que consumira la UI administrativa.
+2. Implementar la UI administrativa para listar pendientes, editar contacto y marcar estados manuales.
+3. Diseñar una fase posterior de exportación controlada hacia `llxbx_societe`, manteniendo esa tabla fuera de alcance hasta validación explícita.
