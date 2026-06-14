@@ -112,7 +112,7 @@ Tambien se verifico arranque parcial de la API hasta el punto de conexion, confi
 
 No se ejecuto una prueba real del `PUT` contra base porque el alcance de esta fase prohíbe modificar datos.
 
-La validacion HTTP completa sobre un puerto alternativo no pudo cerrarse porque la API carga `.env` con `override: true`, por lo que el `API_PORT` exportado por shell no desplaza el puerto configurado y el puerto `8080` ya estaba ocupado por otra instancia. Aun asi, el arranque mostro correctamente ambas conexiones antes del conflicto de bind.
+La primera validacion HTTP sobre puerto alternativo no pudo cerrarse porque la API carga `.env` con `override: true`, por lo que el `API_PORT` exportado por shell no desplaza el puerto configurado y el puerto `8080` ya estaba ocupado por otra instancia. Posteriormente se completó un smoke test HTTP controlado en el puerto `18080`, documentado más abajo.
 
 ### Validacion posterior de solo lectura sobre staging operativo
 
@@ -143,6 +143,39 @@ Aclaraciones de esta validacion:
 - no se toco `llxbx_societe`
 - la prueba HTTP contra puerto `8080` no se considera valida para esta rama porque PM2 mantiene una instancia vieja levantada desde hace 7 dias y `/api/health` devuelve `conexión cerrada`
 
+### Smoke test HTTP controlado
+
+Se levantó una instancia temporal de la API en el puerto `18080`, sin tocar PM2 ni reiniciar la instancia productiva `prospectos-api-8080`.
+
+Resultado:
+
+- la API temporal inició correctamente
+- se confirmó conexión primaria a `leadmaster`
+- se confirmó conexión operativa a `iunaorg_dyd`
+- `GET /api/health` devolvió `status=healthy`
+- `GET /api/prospectos/staging/contactos-pendientes?limit=5` devolvió `success=true`
+- la respuesta incluyó `pagination.total = 38`
+- la muestra incluyó registros:
+	- `prospecto_id 165` `Equipmine`
+	- `prospecto_id 162` `Puentesgruaferro`
+	- `prospecto_id 145` `Xjcsensor`
+	- `prospecto_id 142` `Enausa`
+	- `prospecto_id 141` `Fygtechnologies`
+- la respuesta incluyó `pending_reasons`:
+	- `sin_email`
+	- `con_error_msg`
+	- `con_telefono_sin_email`
+	- `con_whatsapp_sin_email`
+
+Aclaraciones de este smoke test:
+
+- no se ejecutó `PUT`
+- no se modificó la base
+- no se tocó `llxbx_societe`
+- no se reinició PM2 producción
+- la instancia temporal fue apagada correctamente
+- el puerto `18080` quedó libre al finalizar
+
 ## Conclusiones
 
 La base tecnica de backend queda lista para una UI futura de correccion manual:
@@ -154,6 +187,6 @@ La base tecnica de backend queda lista para una UI futura de correccion manual:
 
 ## Proximos pasos
 
-1. Probar los endpoints nuevos en un entorno donde la API pueda levantarse sin conflicto de puerto.
+1. Definir una estrategia segura para probar `PUT /api/prospectos/staging/:id/contacto-manual`, preferentemente con un caso controlado y backup previo, porque modifica datos reales.
 2. Definir el contrato exacto de payload/response que consumira la futura UI administrativa.
 3. Implementar la UI del formulario sobre estos endpoints, manteniendo a `llxbx_societe` fuera de alcance hasta la fase de export controlada.
