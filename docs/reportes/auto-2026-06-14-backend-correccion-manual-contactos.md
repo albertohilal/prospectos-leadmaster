@@ -84,11 +84,50 @@ La actualizacion de contactos se hace de forma conservadora:
 - luego se reutiliza el contacto existente si coincide `valor_normalizado`
 - si no existe, se inserta un nuevo contacto manual
 
+### 4. Extension aplicada para estados de revision manual
+
+La tabla real `iunaorg_dyd.la_stg_prospectos` ya contaba al momento de esta extension con los campos:
+
+- `contacto_estado`
+- `contacto_validado_at`
+- `contacto_validado_note`
+
+Esos campos e indices fueron agregados manualmente desde MySQL Workbench. No se ejecuto ninguna migracion desde este repo para incorporarlos.
+
+Verificacion operativa informada para esta fase:
+
+- los `170` registros existentes quedaron con `contacto_estado = pendiente`
+- los indices `idx_la_stg_contacto_estado` e `idx_la_stg_contacto_validado_at` ya existen en la base
+
+Con esta extension, el backend queda preparado para leer y escribir esos campos desde:
+
+- `GET /api/prospectos/staging/contactos-pendientes`
+- `PUT /api/prospectos/staging/:id/contacto-manual`
+
+Ademas, el endpoint de pendientes ahora excluye los estados resueltos manualmente:
+
+- `corregido_manual`
+- `sin_email`
+- `descartado`
+- `validado_manual`
+
+Y sigue listando solo registros con estado operativo:
+
+- `pendiente`
+- `error_tecnico`
+
+La marca `contacto_validado_at` se actualiza cuando se guarda una correccion, cuando se informa `contacto_estado` o cuando se registra una nota manual en `contacto_validado_note`.
+
+El archivo `config/migration_add_contacto_estado_stg_manual_20260614.sql` es documental y refleja lo ya aplicado manualmente en MySQL Workbench.
+
+El `PUT` sigue sin probarse contra datos reales en esta rama.
+
 ## Archivos modificados
 
 - `src/shared/config.js`
 - `src/shared/db.js`
 - `src/api/server.js`
+- `config/migration_add_contacto_estado_stg_manual_20260614.sql`
 
 ## Validacion ejecutada
 

@@ -111,6 +111,28 @@ function buildPendingReasons(row) {
   return reasons;
 }
 
+const ALLOWED_CONTACT_STATES = new Set([
+  'pendiente',
+  'corregido_manual',
+  'sin_email',
+  'descartado',
+  'validado_manual',
+  'error_tecnico'
+]);
+
+function hasOwnProperty(object, propertyName) {
+  return Object.prototype.hasOwnProperty.call(object, propertyName);
+}
+
+function normalizeOptionalText(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 function collectManualCorrections(payload) {
   const corrections = [];
   const errors = [];
@@ -162,6 +184,42 @@ function collectManualCorrections(payload) {
   }
 
   return { corrections, errors };
+}
+
+function collectManualReviewUpdate(payload) {
+  const safePayload = payload || {};
+  const { corrections, errors } = collectManualCorrections(safePayload);
+  const stateProvided = hasOwnProperty(safePayload, 'contacto_estado');
+  const noteProvided = hasOwnProperty(safePayload, 'contacto_validado_note');
+
+  let contactoEstado = null;
+  if (stateProvided) {
+    contactoEstado = normalizeOptionalText(safePayload.contacto_estado);
+    if (!contactoEstado || !ALLOWED_CONTACT_STATES.has(contactoEstado)) {
+      errors.push('contacto_estado inválido');
+    }
+  }
+
+  let contactoValidadoNote = null;
+  if (noteProvided) {
+    contactoValidadoNote = normalizeOptionalText(safePayload.contacto_validado_note);
+    if (contactoValidadoNote && contactoValidadoNote.length > 1000) {
+      errors.push('contacto_validado_note excede 1000 caracteres');
+    }
+  }
+
+  if (corrections.length === 0 && !stateProvided) {
+    errors.push('Debe enviar al menos una corrección válida o contacto_estado');
+  }
+
+  return {
+    corrections,
+    errors,
+    stateProvided,
+    noteProvided,
+    contactoEstado,
+    contactoValidadoNote
+  };
 }
 
 async function upsertManualContact(connection, stageRow, correction) {
@@ -630,6 +688,9 @@ app.get('/api/prospectos/staging/contactos-pendientes', async (req, res) => {
               s.email_extraido,
               s.telefono_extraido,
               s.whatsapp_extraido,
+              s.contacto_estado,
+              s.contacto_validado_at,
+              s.contacto_validado_note,
               s.error_msg,
               s.estado,
               s.updated_at,
@@ -653,21 +714,23 @@ app.get('/api/prospectos/staging/contactos-pendientes', async (req, res) => {
          FROM la_stg_prospectos_contactos
          GROUP BY stg_prospecto_id
        ) c ON c.stg_prospecto_id = s.id
-       WHERE (
-         s.email_extraido IS NULL
-         OR TRIM(s.email_extraido) = ''
-         OR (s.error_msg IS NOT NULL AND TRIM(s.error_msg) <> '')
-         OR (
-           s.telefono_extraido IS NOT NULL
-           AND TRIM(s.telefono_extraido) <> ''
-           AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
+       WHERE COALESCE(s.contacto_estado, 'pendiente') IN ('pendiente', 'error_tecnico')
+         AND (
+           s.contacto_estado = 'error_tecnico'
+           OR s.email_extraido IS NULL
+           OR TRIM(s.email_extraido) = ''
+           OR (s.error_msg IS NOT NULL AND TRIM(s.error_msg) <> '')
+           OR (
+             s.telefono_extraido IS NOT NULL
+             AND TRIM(s.telefono_extraido) <> ''
+             AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
+           )
+           OR (
+             s.whatsapp_extraido IS NOT NULL
+             AND TRIM(s.whatsapp_extraido) <> ''
+             AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
+           )
          )
-         OR (
-           s.whatsapp_extraido IS NOT NULL
-           AND TRIM(s.whatsapp_extraido) <> ''
-           AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
-         )
-       )
        ORDER BY s.updated_at DESC, s.id DESC
        LIMIT ? OFFSET ?`,
       [limit, offset]
@@ -676,21 +739,23 @@ app.get('/api/prospectos/staging/contactos-pendientes', async (req, res) => {
     const [countRows] = await operationalConnection.execute(
       `SELECT COUNT(*) AS total
        FROM la_stg_prospectos s
-       WHERE (
-         s.email_extraido IS NULL
-         OR TRIM(s.email_extraido) = ''
-         OR (s.error_msg IS NOT NULL AND TRIM(s.error_msg) <> '')
-         OR (
-           s.telefono_extraido IS NOT NULL
-           AND TRIM(s.telefono_extraido) <> ''
-           AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
-         )
-         OR (
-           s.whatsapp_extraido IS NOT NULL
-           AND TRIM(s.whatsapp_extraido) <> ''
-           AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
-         )
-       )`
+       WHERE COALESCE(s.contacto_estado, 'pendiente') IN ('pendiente', 'error_tecnico')
+         AND (
+           s.contacto_estado = 'error_tecnico'
+           OR s.email_extraido IS NULL
+           OR TRIM(s.email_extraido) = ''
+           OR (s.error_msg IS NOT NULL AND TRIM(s.error_msg) <> '')
+           OR (
+             s.telefono_extraido IS NOT NULL
+             AND TRIM(s.telefono_extraido) <> ''
+             AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
+           )
+           OR (
+             s.whatsapp_extraido IS NOT NULL
+             AND TRIM(s.whatsapp_extraido) <> ''
+             AND (s.email_extraido IS NULL OR TRIM(s.email_extraido) = '')
+           )
+         )`
     );
 
     res.json({
@@ -727,7 +792,14 @@ app.put('/api/prospectos/staging/:id/contacto-manual', async (req, res) => {
     return res.status(400).json({ error: 'ID de staging inválido' });
   }
 
-  const { corrections, errors } = collectManualCorrections(req.body || {});
+  const {
+    corrections,
+    errors,
+    stateProvided,
+    noteProvided,
+    contactoEstado,
+    contactoValidadoNote
+  } = collectManualReviewUpdate(req.body || {});
 
   if (errors.length > 0) {
     return res.status(400).json({
@@ -736,17 +808,20 @@ app.put('/api/prospectos/staging/:id/contacto-manual', async (req, res) => {
     });
   }
 
-  if (corrections.length === 0) {
-    return res.status(400).json({
-      error: 'Debe enviar al menos una corrección válida: email, telefono o whatsapp'
-    });
-  }
-
   try {
     operationalConnection = await getOperationalDbConnection();
 
     const [stageRows] = await operationalConnection.execute(
-      `SELECT id, prospecto_id, url_landing, email_extraido, telefono_extraido, whatsapp_extraido, error_msg
+      `SELECT id,
+              prospecto_id,
+              url_landing,
+              email_extraido,
+              telefono_extraido,
+              whatsapp_extraido,
+              contacto_estado,
+              contacto_validado_at,
+              contacto_validado_note,
+              error_msg
        FROM la_stg_prospectos
        WHERE id = ?
        LIMIT 1`,
@@ -760,14 +835,31 @@ app.put('/api/prospectos/staging/:id/contacto-manual', async (req, res) => {
     const stageRow = stageRows[0];
     const updateAssignments = [];
     const updateParams = [];
-
+    const hasCorrections = corrections.length > 0;
+    const resolvedContactoEstado = stateProvided
+      ? contactoEstado
+      : (hasCorrections ? 'corregido_manual' : null);
     for (const correction of corrections) {
       updateAssignments.push(`${correction.field} = ?`);
       updateParams.push(correction.value);
     }
 
+    if (resolvedContactoEstado !== null) {
+      updateAssignments.push('contacto_estado = ?');
+      updateParams.push(resolvedContactoEstado);
+    }
+
+    if (noteProvided) {
+      updateAssignments.push('contacto_validado_note = ?');
+      updateParams.push(contactoValidadoNote);
+    }
+
+    if (hasCorrections || stateProvided || noteProvided) {
+      updateAssignments.push('contacto_validado_at = CURRENT_TIMESTAMP');
+    }
+
     updateAssignments.push('updated_at = CURRENT_TIMESTAMP');
-    if (!isBlank(stageRow.error_msg)) {
+    if (hasCorrections && !isBlank(stageRow.error_msg)) {
       updateAssignments.push('error_msg = NULL');
     }
     updateParams.push(stageId);
@@ -798,6 +890,8 @@ app.put('/api/prospectos/staging/:id/contacto-manual', async (req, res) => {
       data: {
         id: stageId,
         updatedFields: corrections.map((correction) => correction.field),
+        contacto_estado: resolvedContactoEstado,
+        contacto_validado_note: noteProvided ? contactoValidadoNote : undefined,
         fuente: 'manual'
       }
     });
