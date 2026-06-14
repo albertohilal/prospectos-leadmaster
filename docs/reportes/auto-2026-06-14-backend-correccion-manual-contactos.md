@@ -215,6 +215,32 @@ Aclaraciones de este smoke test:
 - la instancia temporal fue apagada correctamente
 - el puerto `18080` quedó libre al finalizar
 
+### Smoke test HTTP posterior a estados de revisión manual
+
+Se levantó una instancia temporal de la API en el puerto `18080`, sin tocar PM2 ni reiniciar `prospectos-api-8080`.
+
+Resultado:
+
+- `/api/health` devolvió `healthy`
+- `GET /api/prospectos/staging/contactos-pendientes?limit=5` devolvió registros correctamente
+- `pagination.total = 38`
+- la respuesta incluyó `contacto_estado`
+- la respuesta incluyó `contacto_validado_at`
+- la respuesta incluyó `contacto_validado_note`
+- los registros devueltos tenían `contacto_estado = pendiente`
+- `contacto_validado_at = null`
+- `contacto_validado_note = null`
+- `pending_reasons` siguió funcionando correctamente
+
+Aclaraciones de este smoke test:
+
+- no se ejecutó `PUT`
+- no se modificó la base de datos
+- no se tocó `llxbx_societe`
+- no se reinició PM2 producción
+- la instancia temporal fue apagada correctamente
+- el puerto `18080` quedó libre
+
 ## Conclusiones
 
 La base tecnica de backend queda lista para una UI futura de correccion manual:
