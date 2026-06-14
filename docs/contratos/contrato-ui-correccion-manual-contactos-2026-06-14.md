@@ -6,6 +6,25 @@ La UI permitirá revisar registros de staging pendientes, corregir email/teléfo
 ## Estado actual del frontend
 A la fecha de este contrato, en este repo no existe todavía una UI implementada, ni componentes, ni router frontend, ni servicios cliente administrativos. El contrato se define como especificación previa para una futura pantalla administrativa.
 
+## URL base configurable
+
+La UI consumidora no debe hardcodear host ni puerto. Debe trabajar con una URL base configurable que apunte al origen de la API de `prospectos-leadmaster`, sin duplicar el prefijo `/api`.
+
+Ejemplos:
+
+- `http://localhost:8080`
+- `http://127.0.0.1:8080`
+- otra URL equivalente expuesta por central-hub hacia esta API
+
+Los endpoints documentados abajo incluyen explícitamente el prefijo `/api`.
+
+Por lo tanto, la UI debe construir las URLs así:
+
+- `${PROSPECTOS_API_BASE_URL}/api/prospectos/staging/contactos-pendientes`
+- `${PROSPECTOS_API_BASE_URL}/api/prospectos/staging/:id/contacto-manual`
+
+No usar una base terminada en `/api` si los endpoints ya incluyen `/api`.
+
 ## Alcance
 Incluye:
 
@@ -51,6 +70,7 @@ Excluye:
 
 - `id`
 - `prospecto_id`
+- `cliente_id`
 - `nom`
 - `palabra_clave`
 - `url_landing`
@@ -68,6 +88,44 @@ Excluye:
 ### Aclaración importante
 
 El GET actual no devuelve un array completo `contactos_normalizados[]`. Solo devuelve resumen agregado de contactos, por ejemplo totales por tipo y contactos principales si están disponibles en la respuesta real. Si la UI necesita ver el detalle completo de `la_stg_prospectos_contactos`, eso debe quedar como decisión de backend futura.
+
+### Ejemplo de response GET
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 259,
+      "prospecto_id": 145,
+      "cliente_id": 52,
+      "nom": "Xjcsensor",
+      "palabra_clave": "sensor industrial",
+      "url_landing": "https://ejemplo.com",
+      "email_extraido": null,
+      "telefono_extraido": "+54 11 1234 5678",
+      "whatsapp_extraido": "5491112345678",
+      "contacto_estado": "pendiente",
+      "contacto_validado_at": null,
+      "contacto_validado_note": null,
+      "error_msg": "HTTP 429",
+      "estado": "pendiente_place_id",
+      "updated_at": "2026-06-14T20:15:00.000Z",
+      "pending_reasons": [
+        "sin_email",
+        "con_error_msg",
+        "con_telefono_sin_email",
+        "con_whatsapp_sin_email"
+      ]
+    }
+  ],
+  "pagination": {
+    "total": 37,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
 
 ### Estados listados por GET
 
@@ -106,6 +164,42 @@ El GET actual no devuelve un array completo `contactos_normalizados[]`. Solo dev
 - `error_msg` solo se limpia si hubo corrección real de contacto
 - no escribe en `llxbx_societe`
 
+### Ejemplo request PUT para corregir email
+
+```json
+{
+  "email_extraido": "contacto@dominio.com",
+  "contacto_validado_note": "Correo corregido manualmente desde revisión administrativa."
+}
+```
+
+### Ejemplo request PUT para marcar sin_email
+
+```json
+{
+  "contacto_estado": "sin_email",
+  "contacto_validado_note": "Validación manual: no se encontró email en landing."
+}
+```
+
+### Ejemplo request PUT para marcar descartado
+
+```json
+{
+  "contacto_estado": "descartado",
+  "contacto_validado_note": "Registro descartado por no ser prospecto útil."
+}
+```
+
+### Ejemplo request PUT para validado_manual
+
+```json
+{
+  "contacto_estado": "validado_manual",
+  "contacto_validado_note": "Datos actuales aceptados manualmente sin cambios."
+}
+```
+
 ### Respuesta esperada exitosa
 
 ```json
@@ -121,6 +215,32 @@ El GET actual no devuelve un array completo `contactos_normalizados[]`. Solo dev
   }
 }
 ```
+
+### Estados permitidos
+
+- `pendiente`
+- `corregido_manual`
+- `sin_email`
+- `descartado`
+- `validado_manual`
+- `error_tecnico`
+
+### Campos que no se deben tocar
+
+La UI no debe intentar escribir ni exponer edición directa sobre:
+
+- `llxbx_societe`
+- `prospecto_id`
+- `cliente_id`
+- `estado`
+- `updated_at`
+- contadores agregados de contactos
+
+La UI solo debe enviar en `PUT` los campos de corrección manual documentados en este contrato.
+
+### Aclaración de alcance
+
+Este contrato no contempla ninguna escritura en `llxbx_societe`. La exportación hacia Dolibarr queda fuera de alcance en esta fase.
 
 ## Errores HTTP esperados
 
