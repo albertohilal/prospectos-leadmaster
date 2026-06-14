@@ -9,7 +9,7 @@ Estado: Revisado
 
 Se preparo la base tecnica de backend para un futuro formulario de correccion manual de contactos sin implementar todavia la UI, sin modificar `.env`, sin ejecutar migraciones y sin tocar `llxbx_societe`.
 
-La decision principal fue separar la conexion operativa de staging respecto de la conexion historica de captura. La API mantiene su conexion actual para `leadmaster.la_prospectos`, pero los endpoints nuevos de correccion manual usan una conexion dedicada basada en `DOLIBARR_DB_*`, que en esta fase debe interpretarse como la conexion al esquema compartido `iunaorg_dyd`, donde viven `la_prospectos`, `la_stg_prospectos` y `la_stg_prospectos_contactos`.
+La decision principal fue separar la conexion operativa de staging respecto de la conexion historica de captura. La API mantiene su conexión primaria histórica basada en `DB_*`, actualmente `DB_NAME=leadmaster`, para los endpoints existentes. Los endpoints nuevos de corrección manual no usan esa conexión: usan una conexión operativa separada basada en `DOLIBARR_DB_*`, que en esta fase apunta a `iunaorg_dyd`.
 
 ## Contexto y problema detectado
 
@@ -110,9 +110,38 @@ Tambien se verifico arranque parcial de la API hasta el punto de conexion, confi
 
 ### Limitaciones de validacion
 
-No se ejecuto una prueba real del `PUT` contra base porque el alcance de esta fase prohbe modificar datos.
+No se ejecuto una prueba real del `PUT` contra base porque el alcance de esta fase prohíbe modificar datos.
 
 La validacion HTTP completa sobre un puerto alternativo no pudo cerrarse porque la API carga `.env` con `override: true`, por lo que el `API_PORT` exportado por shell no desplaza el puerto configurado y el puerto `8080` ya estaba ocupado por otra instancia. Aun asi, el arranque mostro correctamente ambas conexiones antes del conflicto de bind.
+
+### Validacion posterior de solo lectura sobre staging operativo
+
+Se ejecuto una prueba adicional de solo lectura con un script Node que abre conexion mediante `getOperationalDbConnection()` y consulta directamente `la_stg_prospectos`.
+
+Resultado confirmado:
+
+- `DATABASE() = iunaorg_dyd`
+- `total = 170`
+- `sin_email = 32`
+- `con_error = 14`
+- `con_telefono = 102`
+- `con_whatsapp = 68`
+
+La muestra de casos devueltos por esa consulta de solo lectura incluyo:
+
+- `prospecto_id 165` `Equipmine`, con `error HTTP 403`
+- `prospecto_id 162` `Puentesgruaferro`, con email `puentesgruaferro@yahoo.com` y `error HTTP 429`
+- `prospecto_id 145` `Xjcsensor`, sin email y con telefono/WhatsApp
+- `prospecto_id 142` `Enausa`, con `error HTTP 429`
+- `prospecto_id 141` `Fygtechnologies`, sin email y con telefono
+
+Aclaraciones de esta validacion:
+
+- la prueba fue solo lectura
+- no se ejecuto `PUT`
+- no se modifico la base de datos
+- no se toco `llxbx_societe`
+- la prueba HTTP contra puerto `8080` no se considera valida para esta rama porque PM2 mantiene una instancia vieja levantada desde hace 7 dias y `/api/health` devuelve `conexión cerrada`
 
 ## Conclusiones
 
