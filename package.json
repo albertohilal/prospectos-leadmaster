@@ -14,6 +14,7 @@
     "stg:enrich-contact": "node scripts/enrich-stg-contact-from-landing.js",
     "stg:enrich-nom": "node scripts/enrich-stg-nom-from-landing.js",
     "db:batch": "node scripts/run-db-batch.js",
+    "report:seguros": "node scripts/report-seguros-candidatos.js",
     "dev": "concurrently \"npm run api:start\" \"npm run local:start\""
   },
   "keywords": ["scraper", "playwright", "mysql", "ocr", "lead-generation"],
