@@ -15,6 +15,8 @@
     "stg:enrich-nom": "node scripts/enrich-stg-nom-from-landing.js",
     "db:batch": "node scripts/run-db-batch.js",
     "report:seguros": "node scripts/report-seguros-candidatos.js",
+    "geo:sync:dry": "node scripts/geo/sync-geo-keywords-ar.js --dry-run",
+    "geo:queries:seguros": "node scripts/geo/generate-google-queries-seguros.js",
     "dev": "concurrently \"npm run api:start\" \"npm run local:start\""
   },
   "keywords": ["scraper", "playwright", "mysql", "ocr", "lead-generation"],
