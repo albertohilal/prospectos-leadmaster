@@ -69,6 +69,38 @@ function computeModificadorBusqueda(nombreOficial) {
   return stripAccents(nombreOficial).trim();
 }
 
+// ============================================================================
+// Generación de geo_key (clave de idempotencia)
+//
+// Formato ideal: tipo_ubicacion:identificador
+//   provincia:02
+//   departamento:14007
+//   municipio:82084
+//   localidad:82084001
+//   localidad_censal:02001001
+//
+// Cuando no hay id oficial disponible, se usa fallback:
+//   tipo_ubicacion:provincia_id:modificador_normalizado
+//
+// Este fallback es aceptable para seeds manuales y pruebas pero
+// debe marcarse como tal. La sincronización con Georef debe
+// corregirlo cuando el id real esté disponible.
+// ============================================================================
+
+function computeGeoKey(tipoUbicacion, provinciaId, modificadorNormalizado, idOficial) {
+  if (idOficial) {
+    return `${tipoUbicacion}:${idOficial}`;
+  }
+
+  // Fallback documentado
+  if (provinciaId && modificadorNormalizado) {
+    return `${tipoUbicacion}:${provinciaId}:${modificadorNormalizado}`;
+  }
+
+  // Último recurso (no recomendado)
+  return `${tipoUbicacion}:fallback:${modificadorNormalizado || Date.now()}`;
+}
+
 function computePrioridadInicial(tipoUbicacion) {
   switch (tipoUbicacion) {
     case 'provincia':    return 1;
@@ -162,6 +194,7 @@ function escapeSql(value) {
 
 function generateSqlInsert(rows) {
   const columns = [
+    'geo_key',
     'provincia_id', 'provincia_nombre',
     'departamento_id', 'departamento_nombre',
     'municipio_id', 'municipio_nombre',
@@ -198,6 +231,7 @@ function generateSqlInsert(rows) {
 
 function generateCsvOutput(rows) {
   const headers = [
+    'geo_key',
     'provincia_id', 'provincia_nombre', 'modificador_busqueda',
     'modificador_normalizado', 'tipo_ubicacion', 'prioridad_busqueda',
   ];
@@ -258,7 +292,11 @@ function simulateGeorefProvincias(max) {
 }
 
 function transformProvincia(p) {
+  const tipoUbicacion = 'provincia';
+  const modNormalizado = normalizeForSearch(p.nombre);
+
   return {
+    geo_key: computeGeoKey(tipoUbicacion, p.id, modNormalizado, p.id),
     provincia_id: p.id,
     provincia_nombre: p.nombre,
     departamento_id: null,

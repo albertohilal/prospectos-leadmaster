@@ -48,6 +48,7 @@ representa una ubicación geográfica argentina utilizable como modificador.
 | Columna | Tipo | Descripción |
 |---------|------|-------------|
 | `id` | INT AUTO_INCREMENT | Clave primaria |
+| `geo_key` | VARCHAR(180) | Clave estable de idempotencia (formato: `tipo:identificador`) |
 | `provincia_id` | VARCHAR(10) | ID Georef de provincia |
 | `provincia_nombre` | VARCHAR(100) | Nombre oficial con tilde |
 | `departamento_id` | VARCHAR(20) | ID Georef de departamento |
@@ -80,6 +81,7 @@ representa una ubicación geográfica argentina utilizable como modificador.
 
 | Índice | Columnas | Justificación |
 |--------|----------|---------------|
+| `uq_geo_key` | `geo_key` (UNIQUE) | Idempotencia: evita duplicados entre seeds y sincronizaciones |
 | `idx_modificador_normalizado` | `modificador_normalizado` | Búsqueda y deduplicación |
 | `idx_provincia_id` | `provincia_id` | Filtro por provincia |
 | `idx_municipio_id` | `municipio_id` | Filtro por municipio |
@@ -87,6 +89,46 @@ representa una ubicación geográfica argentina utilizable como modificador.
 | `idx_tipo_ubicacion` | `tipo_ubicacion` | Filtro por nivel territorial |
 | `idx_prioridad_busqueda` | `prioridad_busqueda` | Ordenamiento de búsquedas |
 | `idx_activa` | `activa` | Filtro de ubicaciones activas |
+| `idx_geo_tipo_modificador` | `(tipo_ubicacion, modificador_normalizado)` | Búsqueda combinada por tipo y modificador |
+
+### 3.4 Idempotencia del catálogo
+
+La tabla usa `geo_key` como clave única para garantizar idempotencia entre
+seeds manuales y sincronizaciones automáticas con Georef.
+
+**Formato de `geo_key`:**
+```
+provincia:02
+provincia:06
+departamento:14007
+municipio:82084
+localidad:82084001
+localidad_censal:02001001
+```
+
+**Reglas de generación:**
+- `provincia`: `provincia:${provincia_id}`
+- `departamento`: `departamento:${departamento_id}`
+- `municipio`: `municipio:${municipio_id}`
+- `localidad`: `localidad:${localidad_id}`
+- `localidad_censal`: `localidad_censal:${localidad_censal_id}`
+
+**Fallback** (cuando no hay ID oficial disponible):
+```
+tipo_ubicacion:provincia_id:modificador_normalizado
+```
+Este fallback se usa solo en seeds manuales. La sincronización con Georef debe corregirlo cuando el ID real esté disponible.
+
+**Por qué `INSERT IGNORE` requiere `UNIQUE KEY`:**
+
+Sin una restricción `UNIQUE`, `INSERT IGNORE` no puede detectar duplicados.
+El motor de base de datos solo omite filas que violan restricciones `UNIQUE`
+o `PRIMARY KEY`. Con `UNIQUE KEY uq_geo_key (geo_key)`, cada entidad
+territorial tiene una clave estable que:
+- Impide duplicados entre seeds manuales y sincronizaciones Georef.
+- Permite re-ejecutar el seed sin riesgo de datos repetidos.
+- Facilita `INSERT ... ON DUPLICATE KEY UPDATE` para actualizaciones
+  incrementales (población, prioridad, etc.).
 
 ---
 

@@ -38,6 +38,20 @@ CREATE TABLE IF NOT EXISTS la_cat_geo_keywords_ar (
     id INT AUTO_INCREMENT PRIMARY KEY,
 
     -- ---------------------------------------------------------
+    -- Clave de idempotencia
+    -- ---------------------------------------------------------
+    geo_key                VARCHAR(180) NOT NULL COMMENT 'Clave estable para idempotencia entre seeds y sincronizaciones.
+        Formato: tipo_ubicacion:identificador
+        Ejemplos:
+          provincia:02
+          provincia:06
+          departamento:14007
+          municipio:82084
+          localidad:82084001
+          localidad_censal:02001001
+        Si falta id oficial, fallback: tipo_ubicacion:provincia_id:modificador_normalizado',
+
+    -- ---------------------------------------------------------
     -- Identificadores territoriales (fuente: Georef API)
     -- ---------------------------------------------------------
     provincia_id           VARCHAR(10)  DEFAULT NULL COMMENT 'ID Georef de provincia',
@@ -107,13 +121,15 @@ CREATE TABLE IF NOT EXISTS la_cat_geo_keywords_ar (
     -- ---------------------------------------------------------
     -- Índices
     -- ---------------------------------------------------------
-    INDEX idx_modificador_normalizado (modificador_normalizado),
-    INDEX idx_provincia_id            (provincia_id),
-    INDEX idx_municipio_id            (municipio_id),
-    INDEX idx_localidad_censal_id     (localidad_censal_id),
-    INDEX idx_tipo_ubicacion          (tipo_ubicacion),
-    INDEX idx_prioridad_busqueda      (prioridad_busqueda),
-    INDEX idx_activa                  (activa)
+    UNIQUE KEY uq_geo_key                (geo_key),
+    INDEX idx_modificador_normalizado    (modificador_normalizado),
+    INDEX idx_provincia_id               (provincia_id),
+    INDEX idx_municipio_id               (municipio_id),
+    INDEX idx_localidad_censal_id        (localidad_censal_id),
+    INDEX idx_tipo_ubicacion             (tipo_ubicacion),
+    INDEX idx_prioridad_busqueda         (prioridad_busqueda),
+    INDEX idx_activa                     (activa),
+    INDEX idx_geo_tipo_modificador       (tipo_ubicacion, modificador_normalizado)
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Catálogo de modificadores geográficos argentinos para generación de búsquedas en Google';

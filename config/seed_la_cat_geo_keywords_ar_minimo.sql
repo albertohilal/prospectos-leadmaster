@@ -41,7 +41,8 @@ USE iunaorg_dyd;
 -- CABA — Ciudad Autónoma de Buenos Aires
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -50,7 +51,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('02', 'Ciudad Autónoma de Buenos Aires',
+    ('provincia:02',
+     '02', 'Ciudad Autónoma de Buenos Aires',
      'CABA', 'caba',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -63,7 +65,8 @@ VALUES
 -- Buenos Aires
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -72,7 +75,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('06', 'Buenos Aires',
+    ('provincia:06',
+     '06', 'Buenos Aires',
      'Buenos Aires', 'buenos aires',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -85,7 +89,8 @@ VALUES
 -- Córdoba
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -94,7 +99,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('14', 'Córdoba',
+    ('provincia:14',
+     '14', 'Córdoba',
      'Cordoba', 'cordoba',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -107,7 +113,8 @@ VALUES
 -- Rosario (Santa Fe)
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre, departamento_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre, departamento_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -116,7 +123,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('82', 'Santa Fe', 'Rosario',
+    ('municipio:82:rosario',
+     '82', 'Santa Fe', 'Rosario',
      'Rosario', 'rosario',
      'municipio',
      NULL, NULL, NULL, NULL,
@@ -129,7 +137,8 @@ VALUES
 -- Santa Fe (provincia)
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -138,7 +147,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('82', 'Santa Fe',
+    ('provincia:82',
+     '82', 'Santa Fe',
      'Santa Fe', 'santa fe',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -151,7 +161,8 @@ VALUES
 -- Mendoza
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -160,7 +171,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('50', 'Mendoza',
+    ('provincia:50',
+     '50', 'Mendoza',
      'Mendoza', 'mendoza',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -173,7 +185,8 @@ VALUES
 -- Neuquén
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -182,7 +195,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('58', 'Neuquén',
+    ('provincia:58',
+     '58', 'Neuquén',
      'Neuquen', 'neuquen',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -195,7 +209,8 @@ VALUES
 -- Tucumán
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -204,7 +219,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('90', 'Tucumán',
+    ('provincia:90',
+     '90', 'Tucumán',
      'Tucuman', 'tucuman',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -217,7 +233,8 @@ VALUES
 -- Entre Ríos
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -226,7 +243,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('30', 'Entre Ríos',
+    ('provincia:30',
+     '30', 'Entre Ríos',
      'Entre Rios', 'entre rios',
      'provincia',
      NULL, NULL, NULL, NULL,
@@ -239,7 +257,8 @@ VALUES
 -- Santa Cruz
 -- ============================================================
 INSERT IGNORE INTO la_cat_geo_keywords_ar
-    (provincia_id, provincia_nombre,
+    (geo_key,
+     provincia_id, provincia_nombre,
      modificador_busqueda, modificador_normalizado,
      tipo_ubicacion,
      poblacion, poblacion_anio, poblacion_fuente, poblacion_fuente_url,
@@ -248,7 +267,8 @@ INSERT IGNORE INTO la_cat_geo_keywords_ar
      fuente_geo, fuente_poblacion,
      last_geo_sync_at, last_poblacion_sync_at)
 VALUES
-    ('78', 'Santa Cruz',
+    ('provincia:78',
+     '78', 'Santa Cruz',
      'Santa Cruz', 'santa cruz',
      'provincia',
      NULL, NULL, NULL, NULL,

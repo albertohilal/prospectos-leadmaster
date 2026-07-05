@@ -59,16 +59,16 @@ const KEYWORDS_BASE_SEGUROS = [
 // ============================================================================
 
 const MODIFICADORES_GEO = [
-  { modificador_busqueda: 'CABA',              tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
-  { modificador_busqueda: 'Buenos Aires',      tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
-  { modificador_busqueda: 'Cordoba',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
-  { modificador_busqueda: 'Rosario',           tipo_ubicacion: 'municipio',    prioridad_busqueda: 1 },
-  { modificador_busqueda: 'Santa Fe',          tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
-  { modificador_busqueda: 'Mendoza',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
-  { modificador_busqueda: 'Neuquen',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
-  { modificador_busqueda: 'Tucuman',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
-  { modificador_busqueda: 'Entre Rios',        tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
-  { modificador_busqueda: 'Santa Cruz',        tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
+  { geo_key: 'provincia:02',      modificador_busqueda: 'CABA',              tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
+  { geo_key: 'provincia:06',      modificador_busqueda: 'Buenos Aires',      tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
+  { geo_key: 'provincia:14',      modificador_busqueda: 'Cordoba',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
+  { geo_key: 'municipio:82:rosario', modificador_busqueda: 'Rosario',           tipo_ubicacion: 'municipio',    prioridad_busqueda: 1 },
+  { geo_key: 'provincia:82',      modificador_busqueda: 'Santa Fe',          tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
+  { geo_key: 'provincia:50',      modificador_busqueda: 'Mendoza',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 1 },
+  { geo_key: 'provincia:58',      modificador_busqueda: 'Neuquen',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
+  { geo_key: 'provincia:90',      modificador_busqueda: 'Tucuman',           tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
+  { geo_key: 'provincia:30',      modificador_busqueda: 'Entre Rios',        tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
+  { geo_key: 'provincia:78',      modificador_busqueda: 'Santa Cruz',        tipo_ubicacion: 'provincia',    prioridad_busqueda: 2 },
 ];
 
 // ============================================================================
@@ -180,6 +180,7 @@ function generateQueries(keywords, geoModifiers, options) {
 
       queries.push({
         query,
+        geo_key: geo.geo_key || null,
         keyword_base: kw.keyword,
         perfil_keyword: kw.perfil,
         prioridad_keyword: kw.prioridad,
@@ -206,7 +207,7 @@ function generateQueries(keywords, geoModifiers, options) {
 
 function generateCsv(queries) {
   const headers = [
-    'query', 'keyword_base', 'perfil_keyword', 'prioridad_keyword',
+    'query', 'geo_key', 'keyword_base', 'perfil_keyword', 'prioridad_keyword',
     'modificador_geografico', 'tipo_ubicacion', 'prioridad_geografica',
     'prioridad_combinada', 'fuente',
   ];
