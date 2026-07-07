@@ -11,7 +11,7 @@
 ## 1. Estado actual
 
 - Ya existe un seed de keywords base para seguros en `config/seed_ll_keywords_leadmaster_seguros.sql`.
-- Ese seed apunta a `ll_keywords_leadmaster`.
+- Ese seed fue escrito con schema inferido (perfil='A', prioridad=1). La tabla real usa ENUM (perfil='b2b', prioridad='alta'). El seed NO es directamente ejecutable sin adaptación.
 - Ya existe un reporte asociado en `docs/05-REPORTES/2026-07/SEED-KEYWORDS-SEGUROS-LM-003A-B-2026-07-04.md`.
 - Ya se validó un lote geográfico completo de 230 queries (commit `c5e5680`).
 - Ya se creó y publicó `config/seed_ll_queries_prospeccion_seguros.sql` (commit `14c010c`).
@@ -43,7 +43,8 @@ No se usarán:
 
 | Elemento                                                                        | Estado       | Observación                                                                 |
 | ------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------- |
-| `config/seed_ll_keywords_leadmaster_seguros.sql`                                | existente    | Seed de keywords base para vertical seguros                                 |
+| `config/create_ll_keywords_leadmaster.sql`                                      | existente    | DDL real verificada: perfil ENUM(b2b,b2c,mixto), prioridad ENUM(alta,media,baja) |
+| `config/seed_ll_keywords_leadmaster_seguros.sql`                                | existente    | Seed original con schema inferido (NO compatible: perfil=A/B, prioridad=1/2/3) |
 | `docs/05-REPORTES/2026-07/SEED-KEYWORDS-SEGUROS-LM-003A-B-2026-07-04.md`       | existente    | Documenta el seed de keywords y sus supuestos                               |
 | Validación lote completo de queries geo                                         | cerrada      | Commit `c5e5680`; 230 queries, 10 territorios, 23 keywords base             |
 | `config/seed_ll_queries_prospeccion_seguros.sql`                                | publicado    | Commit `14c010c`; contiene 230 queries insertables, perfiles A/B/D          |
@@ -56,11 +57,20 @@ No se usarán:
 La primera búsqueda manual controlada se hará sobre:
 
 - **sector:** `seguros`
-- **perfil:** `A`
-- **prioridad:** `1`
+- **perfil:** `b2b`
+- **prioridad:** `alta`
 - **estado:** `activa`
+- **origen:** `seed_manual_lm003a`
+- **notas:** contiene `categoria_operativa=A`
 
-Perfil A representa posibles clientes de LeadMaster:
+Aclaración importante sobre el mapeo de campos:
+
+- **Perfil Operativo A** es una categoría de trabajo LeadMaster para clasificar keywords según su intención comercial. No corresponde al campo real `perfil` de la tabla.
+- El campo real `perfil` es un ENUM que acepta `b2b`, `b2c` o `mixto`. Todas las keywords de seguros son `b2b`.
+- La categoría operativa (A/B/C/D/E) queda registrada en el campo `notas` como `categoria_operativa=A`.
+- La prioridad real se registra como ENUM `alta`, `media`, `baja`, no como entero `1`.
+
+Perfil Operativo A representa posibles clientes de LeadMaster:
 
 - brokers de seguros,
 - productores asesores,
@@ -90,15 +100,17 @@ Diferenciación de perfiles:
 
 Las siguientes consultas son de referencia. NO se ejecutan desde este documento.
 
-Consulta completa Perfil A:
+Consulta completa Perfil Operativo A:
 
 ```sql
 SELECT id, keyword, sector, perfil, prioridad, estado, origen, notas
 FROM iunaorg_dyd.ll_keywords_leadmaster
 WHERE sector = 'seguros'
-  AND perfil = 'A'
-  AND prioridad = 1
+  AND perfil = 'b2b'
+  AND prioridad = 'alta'
   AND estado = 'activa'
+  AND origen = 'seed_manual_lm003a'
+  AND notas LIKE '%categoria_operativa=A%'
 ORDER BY keyword;
 ```
 
@@ -108,9 +120,11 @@ Variante con límite para revisión inicial:
 SELECT id, keyword, sector, perfil, prioridad, estado, origen, notas
 FROM iunaorg_dyd.ll_keywords_leadmaster
 WHERE sector = 'seguros'
-  AND perfil = 'A'
-  AND prioridad = 1
+  AND perfil = 'b2b'
+  AND prioridad = 'alta'
   AND estado = 'activa'
+  AND origen = 'seed_manual_lm003a'
+  AND notas LIKE '%categoria_operativa=A%'
 ORDER BY keyword
 LIMIT 5;
 ```
