@@ -8,6 +8,7 @@
  * captura landing pages y envía a API en VPS.
  * 
  * Uso: node scraper-local.js "palabra clave" [--target N] [--manual]
+ *      [--keyword-base "keyword base"] [--geo-id N] [--geo-key "provincia:14"] [--localidad "Cordoba"]
  * Ejemplo: node scraper-local.js "presupuesto para reforma de oficinas en CABA"
  */
 
@@ -524,7 +525,7 @@ async function handleLandingPage(page, keyword, prospectNumber, runtimeOptions) 
       return false;
     }
 
-    // Verificar duplicado en API (keyword + landingUrl) antes de capturar screenshot
+    // Verificar duplicado en API (identidad por landing) antes de capturar screenshot
     const duplicateCheck = await checkAlreadyProcessed(keyword, landingUrl);
     if (duplicateCheck.checked && duplicateCheck.processed) {
       logDuplicateProcessedNotice(keyword, landingUrl, duplicateCheck.duplicateId);
@@ -552,6 +553,10 @@ async function handleLandingPage(page, keyword, prospectNumber, runtimeOptions) 
     // Enviar a API
     const prospectoData = {
       keyword,
+      keywordBase: runtimeOptions.keywordBase || null,
+      geoId: runtimeOptions.geoId ?? null,
+      geoKey: runtimeOptions.geoKey || null,
+      localidad: runtimeOptions.localidad || null,
       adUrl: null, // No tenemos URL del anuncio en este flujo
       landingUrl,
       screenshotBase64
@@ -593,7 +598,11 @@ async function main() {
 
   const runtimeOptions = {
     manualConfirmEachCapture: process.env.LOCAL_MANUAL_CONFIRM === 'true',
-    targetCaptures: parseInt(process.env.LOCAL_TARGET_CAPTURES || '', 10) || 0
+    targetCaptures: parseInt(process.env.LOCAL_TARGET_CAPTURES || '', 10) || 0,
+    keywordBase: null,
+    geoId: null,
+    geoKey: null,
+    localidad: null
   };
 
   for (let i = 0; i < extraArgs.length; i++) {
@@ -607,6 +616,31 @@ async function main() {
       const parsed = parseInt(nextArg || '', 10);
       if (!Number.isNaN(parsed) && parsed > 0) {
         runtimeOptions.targetCaptures = parsed;
+        i++;
+      }
+    } else if (arg === '--keyword-base') {
+      const nextArg = extraArgs[i + 1];
+      if (nextArg && !nextArg.startsWith('--')) {
+        runtimeOptions.keywordBase = nextArg;
+        i++;
+      }
+    } else if (arg === '--geo-id') {
+      const nextArg = extraArgs[i + 1];
+      const parsed = parseInt(nextArg || '', 10);
+      if (!Number.isNaN(parsed)) {
+        runtimeOptions.geoId = parsed;
+        i++;
+      }
+    } else if (arg === '--geo-key') {
+      const nextArg = extraArgs[i + 1];
+      if (nextArg && !nextArg.startsWith('--')) {
+        runtimeOptions.geoKey = nextArg;
+        i++;
+      }
+    } else if (arg === '--localidad') {
+      const nextArg = extraArgs[i + 1];
+      if (nextArg && !nextArg.startsWith('--')) {
+        runtimeOptions.localidad = nextArg;
         i++;
       }
     }

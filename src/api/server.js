@@ -2,7 +2,7 @@
 
 /**
  * API REST para Prospectos LeadMaster
- * 
+ *
  * Endpoints para recibir prospectos desde scripts locales
  * y gestionar base de datos MySQL.
  */
@@ -52,16 +52,16 @@ async function saveScreenshot(base64Data, filename) {
   try {
     const screenshotsDir = config.paths.screenshotsDir;
     await fs.mkdir(screenshotsDir, { recursive: true });
-    
+
     const screenshotPath = path.join(screenshotsDir, filename);
-    
+
     // Decodificar base64 (eliminar prefijo data:image/png;base64, si existe)
     const base64Image = base64Data.replace(/^data:image\/\w+;base64,/, '');
     const imageBuffer = Buffer.from(base64Image, 'base64');
-    
+
     await fs.writeFile(screenshotPath, imageBuffer);
     console.log(`📸 Screenshot guardado: ${screenshotPath}`);
-    
+
     return screenshotPath;
   } catch (error) {
     console.error('❌ Error guardando screenshot:', error.message);
@@ -75,7 +75,7 @@ async function saveScreenshot(base64Data, filename) {
 async function extractTextFromImage(imagePath) {
   try {
     console.log(`🔠 Extrayendo texto con OCR: ${imagePath}`);
-    
+
     const { data: { text } } = await Tesseract.recognize(
       imagePath,
       config.ocr.languages,
@@ -87,10 +87,10 @@ async function extractTextFromImage(imagePath) {
         }
       }
     );
-    
+
     const cleanedText = text.trim();
     console.log(`✅ Texto extraído: ${cleanedText.length} caracteres`);
-    
+
     return cleanedText;
   } catch (error) {
     console.error('❌ Error en OCR:', error.message);
@@ -104,28 +104,36 @@ async function extractTextFromImage(imagePath) {
 async function saveProspecto(prospectoData) {
   const {
     palabra_clave,
+    keyword_base,
+    localidad_busqueda,
+    geo_keyword_id_first,
+    geo_key_first,
     url_anuncio,
     url_landing,
     texto_extraido,
     screenshot_path,
     metadata
   } = prospectoData;
-  
+
   try {
     const query = `
-      INSERT INTO la_prospectos 
-      (palabra_clave, url_anuncio, url_landing, texto_extraido, metadata) 
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO la_prospectos
+      (palabra_clave, keyword_base, localidad_busqueda, geo_keyword_id_first, geo_key_first, url_anuncio, url_landing, texto_extraido, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    
+
     const [result] = await dbConnection.execute(query, [
       palabra_clave,
+      keyword_base ?? null,
+      localidad_busqueda ?? null,
+      geo_keyword_id_first ?? null,
+      geo_key_first ?? null,
       url_anuncio,
       url_landing,
       texto_extraido,
       JSON.stringify(metadata || {})
     ]);
-    
+
     console.log(`✅ Prospecto guardado con ID: ${result.insertId}`);
     return result.insertId;
   } catch (error) {
@@ -147,7 +155,7 @@ function buildLandingKey(urlValue) {
 }
 
 async function findDuplicateProspectId(keyword, landingUrl) {
-  if (!keyword || !landingUrl) {
+  if (!landingUrl) {
     return null;
   }
 
@@ -155,10 +163,10 @@ async function findDuplicateProspectId(keyword, landingUrl) {
 
   const [rows] = await dbConnection.execute(
     `SELECT id FROM la_prospectos
-     WHERE palabra_clave = ?
-       AND LOWER(TRIM(TRAILING '/' FROM SUBSTRING_INDEX(url_landing, '?', 1))) = ?
+     WHERE LOWER(TRIM(TRAILING '/' FROM SUBSTRING_INDEX(url_landing, '?', 1))) = ?
+     ORDER BY id ASC
      LIMIT 1`,
-    [keyword, landingKey]
+    [landingKey]
   );
 
   return rows.length > 0 ? rows[0].id : null;
@@ -192,10 +200,14 @@ app.get('/', (req, res) => {
 /**
  * POST /api/prospectos
  * Recibe un prospecto desde el script local
- * 
+ *
  * Body esperado:
  * {
  *   keyword: "palabra clave",
+ *   keywordBase: "keyword base sin geo", (opcional)
+ *   geoId: 3, (opcional)
+ *   geoKey: "provincia:14", (opcional)
+ *   localidad: "Cordoba", (opcional)
  *   adUrl: "https://...", (opcional)
  *   landingUrl: "https://...",
  *   screenshotBase64: "data:image/png;base64,..." (opcional)
@@ -203,34 +215,34 @@ app.get('/', (req, res) => {
  */
 app.post('/api/prospectos', async (req, res) => {
   console.log('📥 Recibiendo nuevo prospecto...');
-  
+
   try {
-    const { keyword, adUrl, landingUrl, screenshotBase64 } = req.body;
+    const { keyword, keywordBase, geoId, geoKey, localidad, adUrl, landingUrl, screenshotBase64 } = req.body;
     const normalizedLandingUrl = typeof landingUrl === 'string' ? landingUrl.trim() : '';
-    
+
     if (!keyword || !normalizedLandingUrl) {
       return res.status(400).json({
         error: 'Faltan campos requeridos: keyword y landingUrl'
       });
     }
-    
+
     let screenshotPath = null;
     let extractedText = null;
-    
+
     // 1. Verificar duplicado en base de datos
     let duplicateId = null;
     if (normalizedLandingUrl) {
       try {
         duplicateId = await findDuplicateProspectId(keyword, normalizedLandingUrl);
         if (duplicateId) {
-          console.log(`⚠️  Duplicado detectado: keyword + URL ya existe con ID ${duplicateId}`);
+          console.log(`⚠️  Duplicado detectado: landing ya existe con ID ${duplicateId}`);
         }
       } catch (dbError) {
         console.error('❌ Error verificando duplicados:', dbError.message);
         // Continuar de todos modos
       }
     }
-    
+
     // Si es duplicado, responder con advertencia pero procesar igual?
     // Por ahora, rechazamos el duplicado
     if (duplicateId) {
@@ -245,20 +257,20 @@ app.post('/api/prospectos', async (req, res) => {
         }
       });
     }
-    
+
     // 2. Guardar screenshot si se envió
     if (screenshotBase64) {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `screenshot-${timestamp}-${keyword.substring(0, 20).replace(/\s+/g, '_')}.png`;
-      
+
       screenshotPath = await saveScreenshot(screenshotBase64, filename);
-      
+
       // 3. Extraer texto con OCR
       if (screenshotPath) {
         extractedText = await extractTextFromImage(screenshotPath);
       }
     }
-    
+
     // 4. Preparar metadatos
     const metadata = {
       screenshot_path: screenshotPath,
@@ -266,19 +278,26 @@ app.post('/api/prospectos', async (req, res) => {
       timestamp: new Date().toISOString(),
       user_agent: req.get('User-Agent')
     };
-    
+
     // 5. Guardar en base de datos
+    const hasGeoId = geoId !== undefined && geoId !== null && String(geoId).trim() !== '';
+    const parsedGeoId = hasGeoId ? Number(geoId) : null;
+    const geoKeywordIdFirst = Number.isInteger(parsedGeoId) ? parsedGeoId : null;
     const prospectoData = {
       palabra_clave: keyword,
+      keyword_base: keywordBase || null,
+      localidad_busqueda: localidad || null,
+      geo_keyword_id_first: geoKeywordIdFirst,
+      geo_key_first: geoKey || null,
       url_anuncio: adUrl || null,
       url_landing: normalizedLandingUrl,
       texto_extraido: extractedText,
       screenshot_path: screenshotPath,
       metadata
     };
-    
+
     const prospectoId = await saveProspecto(prospectoData);
-    
+
     // 6. Responder éxito
     res.status(201).json({
       success: true,
@@ -293,7 +312,7 @@ app.post('/api/prospectos', async (req, res) => {
         textLength: extractedText ? extractedText.length : 0
       }
     });
-    
+
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') {
       try {
@@ -335,7 +354,7 @@ app.post('/api/prospectos', async (req, res) => {
 
 /**
  * GET /api/prospectos/check-processed
- * Verifica si ya existe un prospecto para la combinación keyword + landingUrl
+ * Verifica si ya existe un prospecto para el landing (identidad por landing)
  */
 app.get('/api/prospectos/check-processed', async (req, res) => {
   try {
@@ -374,20 +393,20 @@ app.get('/api/prospectos', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
     const offset = parseInt(req.query.offset) || 0;
-    
+
     const [rows] = await dbConnection.execute(
-      `SELECT id, palabra_clave, url_landing, DATE(created_at) as fecha, 
+      `SELECT id, palabra_clave, url_landing, DATE(created_at) as fecha,
               LENGTH(texto_extraido) as texto_len, es_valido
-       FROM la_prospectos 
-       ORDER BY id DESC 
+       FROM la_prospectos
+       ORDER BY id DESC
        LIMIT ? OFFSET ?`,
       [limit, offset]
     );
-    
+
     const [countResult] = await dbConnection.execute(
       'SELECT COUNT(*) as total FROM la_prospectos'
     );
-    
+
     res.json({
       success: true,
       data: rows,
@@ -397,7 +416,7 @@ app.get('/api/prospectos', async (req, res) => {
         offset
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Error listando prospectos:', error.message);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -414,16 +433,16 @@ app.get('/api/prospectos/:id', async (req, res) => {
       `SELECT * FROM la_prospectos WHERE id = ?`,
       [req.params.id]
     );
-    
+
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Prospecto no encontrado' });
     }
-    
+
     res.json({
       success: true,
       data: rows[0]
     });
-    
+
   } catch (error) {
     console.error('❌ Error obteniendo prospecto:', error.message);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -437,21 +456,21 @@ app.get('/api/prospectos/:id', async (req, res) => {
 app.put('/api/prospectos/:id/validate', async (req, res) => {
   try {
     const { es_valido } = req.body;
-    
+
     if (es_valido === undefined) {
       return res.status(400).json({ error: 'Campo es_valido requerido' });
     }
-    
+
     await dbConnection.execute(
       `UPDATE la_prospectos SET es_valido = ? WHERE id = ?`,
       [es_valido, req.params.id]
     );
-    
+
     res.json({
       success: true,
       message: `Prospecto marcado como ${es_valido ? 'válido' : 'inválido'}`
     });
-    
+
   } catch (error) {
     console.error('❌ Error actualizando prospecto:', error.message);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -466,7 +485,7 @@ app.get('/api/health', async (req, res) => {
   try {
     // Verificar conexión a BD
     await dbConnection.execute('SELECT 1');
-    
+
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -486,7 +505,7 @@ app.get('/api/health', async (req, res) => {
 async function startServer() {
   try {
     await initDatabase();
-    
+
     app.listen(PORT, HOST, () => {
       console.log(`🚀 API LeadMaster ejecutándose en http://${HOST}:${PORT}`);
       console.log(`📁 Endpoints disponibles:`);
@@ -496,7 +515,7 @@ async function startServer() {
       console.log(`   PUT    /api/prospectos/:id/validate - Validar prospecto`);
       console.log(`   GET    /api/health         - Salud del sistema`);
     });
-    
+
   } catch (error) {
     console.error('❌ Error iniciando servidor:', error.message);
     process.exit(1);
