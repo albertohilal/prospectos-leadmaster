@@ -3,7 +3,7 @@
 -- Archivo:  config/migration_add_campaign_attribution_to_ll_envios_email.sql
 -- Fecha:    2026-07-09
 -- Bloque:   LM-003A-B — Brokers / productores / organizadores
--- Estado:   LISTO PARA REVISIÓN / NO EJECUTADO
+-- Estado:   EJECUTADA Y VERIFICADA EN WORKBENCH / PENDIENTE PUSH-DEPLOY
 -- ============================================================
 -- Objetivo:
 --   Agregar a ll_envios_email las columnas que permiten persistir
