@@ -252,21 +252,27 @@ ALTER TABLE la_prospectos
 
 ---
 
+> **Nota de trazabilidad:** las secciones de aprobación y checklist corresponden al estado previo a la ejecución manual. Se conservan como historial del plan original. El estado vigente del documento es el indicado en el encabezado y en el «Registro de ejecución (Workbench)»: migración ejecutada y verificada, sin push/deploy.
+
 ## Registro de ejecución (Workbench)
 
-> Ejecución manual por Alberto Hilal en MySQL Workbench. Completar al ejecutar.
+> Ejecución manual por Alberto Hilal en MySQL Workbench.
 
 - **Fecha/hora de ejecución:** 2026-07-08 16:05:08
-- **Pre-check `SHOW CREATE TABLE la_prospectos`:** ejecutado; tabla `la_prospectos` existente y verificada antes de la migración.
-- **`SELECT COUNT(*)` total de filas:** 171
-- **Confirmación de ausencia de columnas (paso 2):** ejecutada; antes de la migración no existían `keyword_base`, `localidad_busqueda`, `geo_keyword_id_first`, `geo_key_first`.
-- **Resultado del `SELECT` de verificación final (4 columnas, `is_nullable = YES`):** correcto.
-  - `keyword_base` — `varchar(255)` — `YES`
-  - `localidad_busqueda` — `varchar(150)` — `YES`
-  - `geo_keyword_id_first` — `int(11)` — `YES`
-  - `geo_key_first` — `varchar(180)` — `YES`
-- **Smoke check (paso 5):** correcto; `SELECT id, keyword_base, localidad_busqueda, geo_keyword_id_first, geo_key_first FROM la_prospectos LIMIT 1;` devolvió una fila existente con las nuevas columnas en `NULL`.
-- **Estado final de la migración:** ejecutada correctamente, sin incidencias observadas.
+- **Base de datos:** `iunaorg_dyd`
+- **Tabla:** `la_prospectos`
+- **Resultado:**
+  - **`SELECT COUNT(*)`:** 171 filas en la tabla antes y después de la migración (sin cambios).
+  - **Columnas agregadas/verificadas:**
+    - `keyword_base` — `varchar(255)` — `NULLABLE = YES`
+    - `localidad_busqueda` — `varchar(150)` — `NULLABLE = YES`
+    - `geo_keyword_id_first` — `int(11)` — `NULLABLE = YES`
+    - `geo_key_first` — `varchar(180)` — `NULLABLE = YES`
+  - **Todas las columnas quedaron `NULLABLE = YES`** (sin restricciones nuevas sobre datos existentes).
+  - **Smoke check correcto:** `SELECT id, keyword_base, localidad_busqueda, geo_keyword_id_first, geo_key_first FROM la_prospectos LIMIT 1;` devolvió un registro existente con las 4 columnas nuevas en `NULL`.
+- **No se ejecutó índice `UNIQUE`** (migración aditiva exclusivamente; la unicidad por landing queda gated aparte).
+- **No se ejecutó rollback** (no fue necesario; migración exitosa sin incidencias).
+- **No hubo push/deploy** (el push del commit `e7b6c9d` y el deploy del `server.js` quedan para sesión aparte y gated).
 
 ---
 
